@@ -96,6 +96,59 @@ test("legacy chapter grants migrate without loss and the same note can share mul
   }
 });
 
+test("explore keeps multi-chapter targets & document titles; search splits Chinese spaces accurately and unshare rejects typos", async t => {
+  const { vault, state } = await testVault(t);
+  const indexMd = "# 导览目录\n\n## 总览\n见 [[值班指南]] 与 [[值班指南#排故方案]]。\n";
+  const trailingMd = "# 值班指南\n\n## 交接规则   \n现场交接清单需记录异常、复核结果。\n\n## 排故方案\n备用线路只供批准的工单使用。\n";
+  const chineseMd = [
+    "# 中文检索样本", "",
+    "## 招生", "研究生招生说明在此公布。", "",
+    "## 安全", "本研究聚焦生命安全规范与操作指引。", "",
+    "## 长行", "a".repeat(500) + "末尾包含异常、复核关键线索"
+  ].join("\n") + "\n";
+
+  await writeFile(join(vault, "index.md"), indexMd);
+  await writeFile(join(vault, "值班指南.md"), trailingMd);
+  await writeFile(join(vault, "cn.md"), chineseMd);
+
+  const store = await openStore(state);
+  try {
+    store.register("reader", ["knowledge"]);
+    const idxRev = (await store.api.note("index.md")).revision;
+    const guideRev = (await store.api.note("值班指南.md")).revision;
+    const cnRev = (await store.api.note("cn.md")).revision;
+
+    // P2-4 & P1-3: trailing spaces trimmed on headings; unshare typo fails with 404 and leaves real share active.
+    await store.api.share({ client_id: "reader", path: "index.md", heading: "总览", revision: idxRev });
+    await store.api.share({ client_id: "reader", path: "值班指南.md", heading: "交接规则", revision: guideRev });
+    await store.api.share({ client_id: "reader", path: "值班指南.md", heading: "排故方案", revision: guideRev });
+    await store.api.share({ client_id: "reader", path: "cn.md", heading: "招生", revision: cnRev });
+    await store.api.share({ client_id: "reader", path: "cn.md", heading: "安全", revision: cnRev });
+    await store.api.share({ client_id: "reader", path: "cn.md", heading: "长行", revision: cnRev });
+
+    assert.throws(() => store.api.unshare({ client_id: "reader", path: "值班指南.md", heading: "不存在标题" }), { status: 404 });
+    const proj = store.projection("reader");
+
+    // P1-4: explore preserves both shared chapters and document title
+    const rel = await proj.explore({ document_id: "index.md" });
+    assert.equal(rel.relations.length, 2);
+    assert.ok(rel.relations.every(r => r.title === "值班指南"));
+    assert.deepEqual(rel.relations.map(r => r.heading).sort(), ["交接规则", "排故方案"]);
+    assert.equal((await proj.read({ document_id: "值班指南.md", heading: "交接规则" })).citation.title, "值班指南");
+
+    // P1-6a: space-separated Chinese keywords must not glue into wrong segment
+    const q1 = await proj.search({ query: "研究 生命" });
+    assert.equal(q1.results[0].citation.heading, "安全");
+    assert.match(q1.results[0].excerpt, /研究聚焦生命/);
+
+    // Long line (>420 chars) folded Han match centers excerpt around real hit
+    const q2 = await proj.search({ query: "异常复核" });
+    assert.ok(q2.results.some(r => r.citation.document_id === "cn.md" && r.excerpt.includes("异常、复核")));
+  } finally {
+    store.close();
+  }
+});
+
 test("projection suppresses the result when the grant is removed during a file read", async t => {
   const { vault, state } = await testVault(t);
   const path = "source.md";

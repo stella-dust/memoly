@@ -6,7 +6,6 @@
   --mono:ui-monospace,"SF Mono",Consolas,monospace;--rail:222px;--bar:59px;
   font:14px/1.6 var(--font);color:var(--ink);background:var(--paper);font-variant-numeric:tabular-nums;
 }
-html[data-product="enterprise"] {--accent:#2654a1;--accent-deep:#1b437f;--accent-bg:#e9f0ff;--paper:#f4f7fb;--panel:#f6f9fd}
 *{box-sizing:border-box}
 body{margin:0}
 [hidden]{display:none!important}

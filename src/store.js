@@ -22,13 +22,20 @@ function relativeParts(value) {
 }
 
 function directory(root, relative) {
-  if (!lstatSync(root).isDirectory()) throw fail("Vault 根目录不可用或已被替换");
-  let path = root;
-  for (const part of relativeParts(relative)) {
-    path = join(path, part);
-    if (!lstatSync(path).isDirectory()) throw fail("输出目录必须已存在且不经过符号链接");
+  try {
+    if (!lstatSync(root).isDirectory()) throw fail("Vault 根目录不可用或已被替换");
+    let path = root;
+    for (const part of relativeParts(relative)) {
+      path = join(path, part);
+      if (!lstatSync(path).isDirectory()) throw fail("输出目录必须已存在且不经过符号链接");
+    }
+    return path;
+  } catch (error) {
+    if (["ENOENT", "ENOTDIR", "ELOOP", "EACCES", "EPERM"].includes(error?.code)) {
+      throw fail("输出目录必须已存在且不经过符号链接");
+    }
+    throw error;
   }
-  return path;
 }
 
 const unsafeOutputName = part => part.toLowerCase() === "node_modules" ||
@@ -70,7 +77,8 @@ const sharedSectionsSchema = `CREATE TABLE IF NOT EXISTS shared_sections (
 function migrateStore(db) {
   const legacyShares = () => db.prepare("PRAGMA table_info(shared_sections)").all().some(row => row.name === "heading" && !row.pk);
   const lacksPublishPlan = () => !db.prepare("PRAGMA table_info(maintenance_jobs)").all().some(row => row.name === "publish_planned_at");
-  if (!legacyShares() && !lacksPublishPlan()) return;
+  const lacksStaleReject = () => !db.prepare("PRAGMA table_info(maintenance_jobs)").all().some(row => row.name === "stale_on_reject");
+  if (!legacyShares() && !lacksPublishPlan() && !lacksStaleReject()) return;
   transaction(db, () => {
     // Recheck after acquiring the write lock, since several connectors may start together.
     if (legacyShares()) {
@@ -83,6 +91,7 @@ function migrateStore(db) {
       `);
     }
     if (lacksPublishPlan()) db.exec("ALTER TABLE maintenance_jobs ADD COLUMN publish_planned_at TEXT");
+    if (lacksStaleReject()) db.exec("ALTER TABLE maintenance_jobs ADD COLUMN stale_on_reject INTEGER NOT NULL DEFAULT 0");
   });
 }
 
@@ -108,7 +117,7 @@ function dbAt(state, create) {
       source TEXT NOT NULL, heading TEXT NOT NULL, revision TEXT NOT NULL, target TEXT NOT NULL UNIQUE,
       status TEXT NOT NULL DEFAULT 'pending', created_at TEXT NOT NULL,
       start_line INTEGER NOT NULL, end_line INTEGER NOT NULL, title TEXT, content TEXT,
-      output_revision TEXT, published_at TEXT, publish_planned_at TEXT
+      output_revision TEXT, published_at TEXT, publish_planned_at TEXT, stale_on_reject INTEGER NOT NULL DEFAULT 0
     );
     CREATE TABLE IF NOT EXISTS activity (
       sequence INTEGER PRIMARY KEY, at TEXT NOT NULL, client TEXT NOT NULL, client_name TEXT,
@@ -212,6 +221,15 @@ export async function openStore(path, { requireVault = true } = {}) {
     const projection = scopedProjection(vault, () => [{ path: source, heading, revision }], { maintenance: true });
     return projection.read({ document_id: source, heading, revision });
   };
+  const validateOutputDirectory = (output) => {
+    const parts = relativeParts(output);
+    const rootParts = writeRoot ? relativeParts(writeRoot) : [];
+    if (!writeRoot || parts.length < rootParts.length || rootParts.some((part, index) => part !== parts[index]) ||
+        parts.slice(rootParts.length).some(unsafeOutputName)) {
+      throw fail("输出目录必须位于已选写入目录之内");
+    }
+    return directory(vault.root, output);
+  };
   const targetPath = (target) => {
     const parts = relativeParts(target);
     const rootParts = writeRoot ? relativeParts(writeRoot) : [];
@@ -290,17 +308,20 @@ export async function openStore(path, { requireVault = true } = {}) {
       });
     },
     unshare({ client_id: id, path, heading }) {
+      let result;
       if (heading === undefined) {
-        db.prepare("DELETE FROM shared_sections WHERE client_id=? AND path=?").run(id, path);
+        result = db.prepare("DELETE FROM shared_sections WHERE client_id=? AND path=?").run(id, path);
       } else {
         if (typeof heading !== "string" || !heading.trim()) throw fail("章节标题不能为空");
-        db.prepare("DELETE FROM shared_sections WHERE client_id=? AND path=? AND heading=?").run(id, path, heading);
+        result = db.prepare("DELETE FROM shared_sections WHERE client_id=? AND path=? AND heading=?").run(id, path, heading);
       }
+      if (!Number(result.changes)) throw absent();
       audit({ tool: "unshare_knowledge", status: "ok", id: path });
-      return { status: "ok" };
+      return { status: "ok", removed: Number(result.changes) };
     },
+    validateOutputDirectory,
     jobs,
-    async createJob({ source, heading, revision, target, client_id: id }) {
+    async createJob({ source, heading, revision, target, client_id: id, auditClient = "owner", auditTool = "approve_job_input" }) {
       expectClient(id, "maintenance");
       if (source === target) throw fail("原件和输出文件必须分开");
       const targetFile = targetPath(target);
@@ -323,7 +344,7 @@ export async function openStore(path, { requireVault = true } = {}) {
         if (error.errcode === 2067) throw conflict("输出已被另一个任务占用");
         throw error;
       }
-      audit({ tool: "approve_job_input", status: "pending", id: taskId, revision });
+      audit({ client: auditClient, tool: auditTool, status: "pending", id: taskId, revision });
       return { id: taskId, status: "pending" };
     },
     async publishJob(id) {
@@ -361,8 +382,20 @@ export async function openStore(path, { requireVault = true } = {}) {
         return { status: "published", output_revision: revision };
       });
     },
-    rejectJob(id) {
-      const result = db.prepare("UPDATE maintenance_jobs SET status='rejected' WHERE id=? AND status IN ('pending','proposed')").run(id);
+    async rejectJob(id) {
+      const row = findJob(id);
+      if (!row || !["pending", "proposed"].includes(row.status)) throw absent();
+      let stale = row.status === "pending" ? 1 : 0;
+      if (!stale) {
+        try {
+          const evidence = await section(row.source, row.heading, row.revision);
+          if (evidence.status !== "ok" || evidence.truncated) stale = 1;
+        } catch {
+          stale = 1;
+        }
+      }
+      const result = db.prepare("UPDATE maintenance_jobs SET status='rejected', stale_on_reject=? WHERE id=? AND status IN ('pending','proposed')")
+        .run(stale, id);
       if (!Number(result.changes)) throw absent();
       audit({ tool: "reject_job", status: "rejected", id });
       return { status: "rejected" };

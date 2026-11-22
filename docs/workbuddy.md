@@ -10,6 +10,8 @@ WorkBuddy 在本机启动 Memoly 的 stdio 连接器。日常问答和定时整�
 
 `knowledge` 允许调用查询工具。具体文档要另外授权到章节。`maintenance` 允许领任务、读取授权来源与提交草稿。`memory:submit` 允许送记忆候选，所有者可将生效版本授予有 `memory:read` 的其他客户端。
 
+如需给 WorkBuddy 注入稳定的工具规范，可运行 `memoly skill path` 找到内置的 [memoly-agent](../skills/memoly-agent/SKILL.md) 与 [memoly-maintain](../skills/memoly-maintain/SKILL.md) 技能说明。
+
 ## 先完成一次真实 MCP 往返
 
 给样例 Vault 新建一个维护专用身份，并将生成的配置安装到 WorkBuddy。由相同的状态目录执行。
@@ -32,7 +34,7 @@ memoly feed add workbuddy-maintenance inbox/shift-handoff.md 'Lockout review' no
 memoly feed list
 ```
 
-`feed list` 显示来源 ID。接入时可用 `memoly feed scan <id>` 主动扫描。`queued` 表示有任务待领取，`unchanged` 表示没有新增任务。之后由 WorkBuddy 每轮调用 `list_maintenance_jobs` 检查章节。重复扫描会复用同一原件版本的任务，已审批或退回的相同片段也不重新排队。待审时如果原件版本变化，需要复核新版候选。批准后写入授权目录内的新 Markdown。若已有主条目，由所有者按自己的 Vault 规则复核合并。先用上述样例验证，再配置真实来源。
+`feed list` 显示来源 ID。接入时可用 `memoly feed scan <id>` 主动扫描。`queued` 表示有任务待领取，`unchanged` 表示没有新增任务。之后由 WorkBuddy 每轮调用 `list_maintenance_jobs` 检查章节。重复扫描会复用同一原件版本的任务，已审批或有效退回的相同片段也不重新排队。如果在待审批期间原件变更导致旧卡失效，在工作台「退回任务」清理旧卡后，下一次扫描会自动为最新原件重新排队，不会漏掉变更章节。批准后写入授权目录内的新 Markdown（包含带中文名和既有子目录）。若已有主条目，由所有者按自己的 Vault 规则复核合并。先用上述样例验证，再配置真实来源。
 
 1. 在 WorkBuddy 打开「定时任务」，手动新建**本地**任务，选独立工作空间与维护连接器。复制[维护 Prompt](../examples/workbuddy-maintenance.prompt.md)。工作空间可为独立空目录，实际来源由 Memoly 的任务绑定。
 2. 选时间和频率。保存后先用任务卡「立即运行」核对工具调用，再观察下一次计划触发的实际记录。按需要选择 WorkBuddy 的任务权限，定时整理只需调用这三个维护工具。宿主要求交互确认时可在运行记录找到等待原因。

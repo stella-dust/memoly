@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
+import { matchScore, searchable, searchQuery } from "./search.js";
 
 export const memoryKey = z.string().trim().regex(/^[a-z0-9][a-z0-9._-]{0,95}$/);
 export const memoryProposal = z.strictObject({
@@ -106,11 +107,7 @@ export function createMemory(db) {
   const visibility = `m.status = 'active' AND (m.expires_at IS NULL OR m.expires_at > ?)
     AND EXISTS(SELECT 1 FROM json_each(m.readers) AS audience WHERE audience.value = ?)`;
   const getVisible = db.prepare(`SELECT m.* FROM personal_memory m WHERE ${visibility} AND m.key = ?`);
-  const searchVisible = db.prepare(`
-    SELECT m.* FROM personal_memory m WHERE ${visibility}
-      AND instr(lower(m.key || char(10) || m.statement || char(10) || m.context), lower(?)) > 0
-    ORDER BY m.approved_at DESC LIMIT ?
-  `);
+  const listVisible = db.prepare(`SELECT m.* FROM personal_memory m WHERE ${visibility} ORDER BY m.approved_at DESC`);
 
   const transact = work => {
     db.exec("BEGIN IMMEDIATE");
@@ -208,7 +205,18 @@ export function createMemory(db) {
 
     search(clientId, input) {
       const { query, limit = 6 } = check(memorySearch, input);
-      const results = searchVisible.all(now(), clientId, query, limit).map(memoryView);
+      const parsed = searchQuery(query);
+      if (!parsed.terms.length && !parsed.bigrams.length) {
+        return { status: "no_evidence", results: [] };
+      }
+      const scored = [];
+      for (const row of listVisible.all(now(), clientId)) {
+        const index = searchable([row.key, row.statement, row.context].filter(Boolean).join("\n"));
+        const score = matchScore(index, parsed);
+        if (score > 0) scored.push({ score, memory: memoryView(row) });
+      }
+      scored.sort((left, right) => right.score - left.score);
+      const results = scored.slice(0, limit).map(item => item.memory);
       return { status: results.length ? "ok" : "no_evidence", results };
     }
   };

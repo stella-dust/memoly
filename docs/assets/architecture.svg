@@ -1,0 +1,105 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 560" width="1120" height="560" role="img" aria-labelledby="arch-title arch-desc">
+  <title id="arch-title">Memoly Local 0.4.0 Architecture</title>
+  <desc id="arch-desc">Three-column architecture diagram showing Local Vault boundaries, Memoly Local Core (SQLite WAL, Loopback Web UI, Stdio MCP, CLI, Skills), and separate Desktop, Terminal, and IDE Agent connectors.</desc>
+  <defs>
+    <marker id="arrow-indigo" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#4F46E5"/>
+    </marker>
+    <marker id="arrow-slate" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#475569"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1120" height="560" rx="20" fill="#F6F7FB" stroke="#DCE2ED" stroke-width="2"/>
+
+  <!-- Header -->
+  <text x="40" y="46" font-family="Inter, -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif" font-size="22" font-weight="750" fill="#0F1528">Memoly Local 0.4.0 · Local-First Architecture</text>
+  <text x="40" y="72" font-family="Inter, -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif" font-size="13.5" fill="#485068">Owner Web UI on 127.0.0.1 · SQLite &amp; 0600 keys live outside Vault in ~/.memoly · Isolated stdio MCP per Agent</text>
+  <rect x="912" y="26" width="168" height="32" rx="16" fill="#ECEFFF" stroke="#C7D2FE"/>
+  <text x="996" y="47" text-anchor="middle" font-family="ui-monospace, Menlo, monospace" font-size="12" font-weight="700" fill="#3452CF">Apache-2.0 · v0.4.0</text>
+
+  <!-- Column 1: Vault -->
+  <rect x="40" y="100" width="296" height="364" rx="16" fill="#FFFFFF" stroke="#DCE2ED" stroke-width="1.5"/>
+  <text x="62" y="130" font-family="Inter, -apple-system, sans-serif" font-size="14" font-weight="750" fill="#0F1528">1. YOUR VAULT (Obsidian / Docs)</text>
+  <text x="62" y="148" font-family="Inter, -apple-system, sans-serif" font-size="12" fill="#5B6782">Source of truth stays untouched on disk</text>
+
+  <rect x="60" y="164" width="256" height="96" rx="10" fill="#F8FAFC" stroke="#DCE2ED"/>
+  <text x="74" y="186" font-family="Inter, -apple-system, sans-serif" font-size="12.5" font-weight="700" fill="#0F1528">Shared Markdown Sections</text>
+  <text x="74" y="206" font-family="Inter, -apple-system, sans-serif" font-size="11.5" fill="#485068">• Exact heading grants + SHA-256 revision</text>
+  <text x="74" y="224" font-family="Inter, -apple-system, sans-serif" font-size="11.5" fill="#485068">• [[WikiLink]] graph across shared chapters</text>
+  <text x="74" y="242" font-family="Inter, -apple-system, sans-serif" font-size="11.5" fill="#485068">• CJK word segmentation + preview formats</text>
+
+  <rect x="60" y="272" width="256" height="84" rx="10" fill="#EEF2FF" stroke="#C7D2FE"/>
+  <text x="74" y="294" font-family="Inter, -apple-system, sans-serif" font-size="12.5" font-weight="700" fill="#2339A0">Controlled Output (--write-root)</text>
+  <text x="74" y="314" font-family="Inter, -apple-system, sans-serif" font-size="11.5" fill="#354359">• Approved drafts written to notes/ only</text>
+  <text x="74" y="332" font-family="Inter, -apple-system, sans-serif" font-size="11.5" fill="#354359">• Never overwrites existing canonical notes</text>
+  <text x="74" y="348" font-family="Inter, -apple-system, sans-serif" font-size="11" fill="#4F46E5">Owner merges reviewed takeaways manually</text>
+
+  <rect x="60" y="368" width="256" height="78" rx="10" fill="#FFF1F2" stroke="#FECDD3"/>
+  <text x="74" y="390" font-family="Inter, -apple-system, sans-serif" font-size="12.5" font-weight="700" fill="#9F1239">Share-Blocked Private Boundary</text>
+  <text x="74" y="409" font-family="Inter, -apple-system, sans-serif" font-size="11.5" fill="#881337">• _archive/, memory/, personal-ip/, MEMORY.md</text>
+  <text x="74" y="427" font-family="Inter, -apple-system, sans-serif" font-size="11.5" fill="#881337">• status: inbox / draft / archived / symlinks</text>
+
+  <!-- Arrows Col 1 <-> Col 2 -->
+  <line x1="336" y1="220" x2="380" y2="220" stroke="#475569" stroke-width="2" marker-end="url(#arrow-slate)" marker-start="url(#arrow-slate)"/>
+  <text x="358" y="210" text-anchor="middle" font-family="Inter, sans-serif" font-size="10.5" font-weight="600" fill="#475569">Read /</text>
+  <text x="358" y="238" text-anchor="middle" font-family="Inter, sans-serif" font-size="10.5" font-weight="600" fill="#475569">Write new</text>
+
+  <!-- Column 2: Memoly Local Core -->
+  <rect x="384" y="100" width="352" height="364" rx="16" fill="#FFFFFF" stroke="#4F46E5" stroke-width="2"/>
+  <text x="406" y="130" font-family="Inter, -apple-system, sans-serif" font-size="14" font-weight="750" fill="#2339A0">2. MEMOLY LOCAL CORE (~/.memoly)</text>
+  <text x="406" y="148" font-family="Inter, -apple-system, sans-serif" font-size="12" fill="#485068">0700 state dir · SQLite WAL · audit log</text>
+
+  <rect x="404" y="164" width="312" height="66" rx="10" fill="#EEF2FF" stroke="#A5B4FC"/>
+  <text x="418" y="186" font-family="Inter, -apple-system, sans-serif" font-size="12.5" font-weight="700" fill="#1E1B4B">Owner Web UI (127.0.0.1:8766)</text>
+  <text x="418" y="205" font-family="Inter, -apple-system, sans-serif" font-size="11.5" fill="#354359">Vault tree, Side-by-side proposal diff, Memory</text>
+  <text x="418" y="221" font-family="Inter, -apple-system, sans-serif" font-size="11.5" fill="#354359">approval/revoke, Feed status &amp; Agent audit trail</text>
+
+  <rect x="404" y="238" width="312" height="66" rx="10" fill="#F8FAFC" stroke="#CBD5E1"/>
+  <text x="418" y="260" font-family="Inter, -apple-system, sans-serif" font-size="12.5" font-weight="700" fill="#0F1528">Stdio MCP Server (9 Scoped Tools)</text>
+  <text x="418" y="279" font-family="ui-monospace, Menlo, monospace" font-size="10.8" fill="#3452CF">search / read / explore_knowledge</text>
+  <text x="418" y="295" font-family="ui-monospace, Menlo, monospace" font-size="10.8" fill="#3452CF">read / search / submit_memory · maintenance*</text>
+
+  <rect x="404" y="312" width="312" height="64" rx="10" fill="#F8FAFC" stroke="#CBD5E1"/>
+  <text x="418" y="334" font-family="Inter, -apple-system, sans-serif" font-size="12.5" font-weight="700" fill="#0F1528">CLI (bin/memoly.js) &amp; Recurring Feeds</text>
+  <text x="418" y="353" font-family="ui-monospace, Menlo, monospace" font-size="10.8" fill="#485068">init · serve · status · connector · share</text>
+  <text x="418" y="368" font-family="ui-monospace, Menlo, monospace" font-size="10.8" fill="#485068">job · feed add/scan/disable · skill · doctor</text>
+
+  <rect x="404" y="384" width="312" height="62" rx="10" fill="#ECFDF5" stroke="#A7F3D0"/>
+  <text x="418" y="406" font-family="Inter, -apple-system, sans-serif" font-size="12.5" font-weight="700" fill="#065F46">Bundled Methodology Skills (skills/)</text>
+  <text x="418" y="425" font-family="ui-monospace, Menlo, monospace" font-size="11" fill="#047857">memoly-agent · memoly-maintain · memoly-operator</text>
+
+  <!-- Arrows Col 2 <-> Col 3 -->
+  <line x1="736" y1="220" x2="782" y2="220" stroke="#4F46E5" stroke-width="2" marker-end="url(#arrow-indigo)" marker-start="url(#arrow-indigo)"/>
+  <text x="759" y="210" text-anchor="middle" font-family="Inter, sans-serif" font-size="10.5" font-weight="600" fill="#4F46E5">stdio</text>
+  <text x="759" y="238" text-anchor="middle" font-family="Inter, sans-serif" font-size="10.5" font-weight="600" fill="#4F46E5">MCP</text>
+
+  <!-- Column 3: Agent Hosts -->
+  <rect x="786" y="100" width="294" height="364" rx="16" fill="#FFFFFF" stroke="#DCE2ED" stroke-width="1.5"/>
+  <text x="808" y="130" font-family="Inter, -apple-system, sans-serif" font-size="14" font-weight="750" fill="#0F1528">3. SEPARATE AGENT HOSTS</text>
+  <text x="808" y="148" font-family="Inter, -apple-system, sans-serif" font-size="12" fill="#5B6782">Independent 0600 keys &amp; narrow scopes</text>
+
+  <rect x="806" y="164" width="254" height="86" rx="10" fill="#F8FAFC" stroke="#DCE2ED"/>
+  <text x="820" y="186" font-family="Inter, -apple-system, sans-serif" font-size="12.5" font-weight="700" fill="#0F1528">WorkBuddy (GUI + Cron)</text>
+  <text x="820" y="205" font-family="Inter, -apple-system, sans-serif" font-size="11.5" fill="#485068">• QA connector: knowledge,memory:submit</text>
+  <text x="820" y="223" font-family="Inter, -apple-system, sans-serif" font-size="11.5" fill="#485068">• Scheduled worker: maintenance feeds</text>
+  <text x="820" y="241" font-family="Inter, -apple-system, sans-serif" font-size="11" fill="#3452CF">Skill: memoly-maintain + memoly-agent</text>
+
+  <rect x="806" y="262" width="254" height="86" rx="10" fill="#F8FAFC" stroke="#DCE2ED"/>
+  <text x="820" y="284" font-family="Inter, -apple-system, sans-serif" font-size="12.5" font-weight="700" fill="#0F1528">Codex CLI &amp; Claude Code</text>
+  <text x="820" y="303" font-family="Inter, -apple-system, sans-serif" font-size="11.5" fill="#485068">• Coding recall: knowledge,memory:read</text>
+  <text x="820" y="321" font-family="Inter, -apple-system, sans-serif" font-size="11.5" fill="#485068">• Separate ID per CLI host (--credential-file)</text>
+  <text x="820" y="339" font-family="Inter, -apple-system, sans-serif" font-size="11" fill="#3452CF">Verify citations + active memory version</text>
+
+  <rect x="806" y="360" width="254" height="86" rx="10" fill="#F8FAFC" stroke="#DCE2ED"/>
+  <text x="820" y="382" font-family="Inter, -apple-system, sans-serif" font-size="12.5" font-weight="700" fill="#0F1528">Cursor / Generic Stdio MCP</text>
+  <text x="820" y="401" font-family="Inter, -apple-system, sans-serif" font-size="11.5" fill="#485068">• Reuses exact CLI generated JSON args</text>
+  <text x="820" y="419" font-family="Inter, -apple-system, sans-serif" font-size="11.5" fill="#485068">• Denied/ungranted paths always return:</text>
+  <text x="820" y="437" font-family="ui-monospace, Menlo, monospace" font-size="11" fill="#9F1239">  not_found_or_unavailable</text>
+
+  <!-- Bottom Small-Team Single-Operator strip -->
+  <rect x="40" y="484" width="1040" height="52" rx="12" fill="#FFFFFF" stroke="#DCE2ED"/>
+  <rect x="54" y="497" width="176" height="26" rx="13" fill="#FFF1DB" stroke="#EFCB98"/>
+  <text x="142" y="514" text-anchor="middle" font-family="Inter, -apple-system, sans-serif" font-size="12" font-weight="700" fill="#69350D">Single-Operator Small Team</text>
+  <text x="246" y="515" font-family="Inter, -apple-system, sans-serif" font-size="12.5" fill="#354359">Sync ONLY Vault files (Git / Syncthing / shared drive). Keep ~/.memoly SQLite &amp; .key files private on the operator device. No multi-tenant accounts yet.</text>
+</svg>

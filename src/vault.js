@@ -3,6 +3,7 @@ import { lstat, open, readdir, realpath } from "node:fs/promises";
 import { basename, extname, join, posix } from "node:path";
 import { createHash } from "node:crypto";
 import { parseDocument } from "yaml";
+import { excerptFor, matchScore, normalize, searchable, searchQuery } from "./search.js";
 
 const TEXT_EXTENSIONS = new Set([".md", ".txt", ".base", ".canvas", ".csv"]);
 const PRIVATE_ROOTS = new Set(["_archive", "_meta", "memory", "outputs", "personal-ip"]);
@@ -10,7 +11,7 @@ const PRIVATE_FILES = new Set(["memory.md", "inbox.md", "handoff.md", "log.md"])
 const MAX_NOTE_BYTES = 384 * 1024;
 export const MAX_SHARED_SECTIONS = 512;
 const MAX_CACHE_BYTES = 12 * 1024 * 1024;
-const MAX_CACHE_ENTRIES = 128;
+const MAX_CACHE_ENTRIES = 512;
 const READ_BATCH_SIZE = 16;
 const vaultCaches = new WeakMap();
 const isHidden = name => name.startsWith(".") || name.toLowerCase() === "node_modules";
@@ -105,8 +106,11 @@ async function readVaultNote(vault, path, expectedRevisions) {
     if (read !== bytes.length || fileVersion(after) !== version) throw unavailable();
     const revision = createHash("sha256").update(bytes).digest("hex").slice(0, 16);
     if (expectedRevisions && !expectedRevisions.has(revision)) throw unavailable();
+    let text;
+    try { text = new TextDecoder("utf-8", { fatal: true }).decode(bytes); }
+    catch { throw unavailable(); }
     const note = parseNote(path, {
-      text: new TextDecoder("utf-8", { fatal: true }).decode(bytes),
+      text,
       revision,
       updatedAt: new Date(Number(stat.mtimeMs)).toISOString()
     });
@@ -165,7 +169,8 @@ function parseNote(path, data) {
     const heading = /^ {0,3}(#{1,6})[\t ]+(.+)$/.exec(line);
     const setext = /^ {0,3}(=+|-+)[\t ]*$/.exec(line);
     if (heading) {
-      headings.push({ name: heading[2], depth: heading[1].length, line: sourceLine });
+      const normalizedHeading = heading[2].replace(/[\t ]+#+[\t ]*$/, "").trim();
+      if (normalizedHeading) headings.push({ name: normalizedHeading, depth: heading[1].length, line: sourceLine });
       paragraphStart = -1;
     } else if (setext && paragraphStart >= 0) {
       headings.push({ name: body.slice(paragraphStart, index).map(text => text.trim()).join(" "),
@@ -176,8 +181,12 @@ function parseNote(path, data) {
     } else if (paragraphStart < 0) {
       paragraphStart = index;
     }
-    for (const link of line.matchAll(/(?<!!)\[\[([^\]|#]+)(?:[#|][^\]]*)?\]\]/g)) {
-      linkPositions.push({ target: link[1].trim().replace(/\\$/, ""), line: sourceLine });
+    for (const link of line.matchAll(/(?<!!)\[\[([^\]|#]+)(?:#([^\]|]+))?(?:\|[^\]]*)?\]\]/g)) {
+      linkPositions.push({
+        target: link[1].trim().replace(/\\$/, ""),
+        anchor: link[2]?.trim() || null,
+        line: sourceLine
+      });
     }
   }
   return {
@@ -199,62 +208,12 @@ function mayShare(path, maintenance) {
     !parts.some(part => part.toLowerCase() === "_archive") && !PRIVATE_FILES.has(parts.at(-1).toLowerCase());
 }
 const inactive = new Set(["inbox", "archived", "superseded", "draft"]);
-const normalize = text => text.normalize("NFKC").toLowerCase();
 const citation = (note, start, end, heading) => ({
   document_id: note.path, title: note.title, revision: note.revision, heading, start_line: start, end_line: end
 });
 
 const unavailableResult = () => ({ status: "not_found_or_unavailable" });
 const grantKey = ({ path, heading, revision }) => JSON.stringify([path, heading, revision]);
-const Han = /\p{Script=Han}/u;
-const segmenter = new Intl.Segmenter("zh", { granularity: "word" });
-const stopWords = new Set(["如何", "哪些", "什么", "是否", "一下", "请问", "what", "which", "how", "does", "is", "the", "a", "of"]);
-const foldHan = text => text.replace(/(?<=\p{Script=Han})[\p{P}\s]+(?=\p{Script=Han})/gu, "");
-
-function searchable(text) {
-  const literal = normalize(text);
-  return { literal, folded: Han.test(literal) ? foldHan(literal) : literal };
-}
-
-function searchQuery(value) {
-  const { literal, folded } = searchable(value.trim());
-  const spans = folded.match(/\p{Script=Han}+|(?:(?!\p{Script=Han})[\p{L}\p{N}])+(?:[-_.](?:(?!\p{Script=Han})[\p{L}\p{N}])+)*/gu) || [];
-  const terms = new Set();
-  const bigrams = new Set();
-  for (const span of spans) {
-    if (!Han.test(span)) {
-      if (!stopWords.has(span)) terms.add(span);
-      continue;
-    }
-    for (const { segment, isWordLike } of segmenter.segment(span)) {
-      if (isWordLike && !stopWords.has(segment) && (segment.length > 1 || spans.length === 1 && segment === folded)) {
-        terms.add(segment);
-      }
-    }
-    const chars = Array.from(span);
-    for (let i = 1; i < chars.length; i++) {
-      const pair = chars[i - 1] + chars[i];
-      if (!/[的了么吗呢着]/u.test(pair) && !stopWords.has(pair)) bigrams.add(pair);
-    }
-  }
-  return { literal, folded, terms: [...terms].slice(0, 16), bigrams: [...bigrams].slice(0, 32) };
-}
-
-function matchScore(row, query) {
-  if (row.literal.includes(query.literal)) return 12;
-  if (query.folded !== query.literal && row.folded.includes(query.folded)) return 12;
-  if (row.folded !== row.literal && row.folded.includes(query.folded)) return 12;
-  const words = query.terms.filter(term => row.folded.includes(term)).length;
-  if (words) return 2 + words * 2;
-  return query.bigrams.filter(term => row.folded.includes(term)).length >= 2 ? 1 : 0;
-}
-
-function excerptFor(line, query) {
-  const normalized = normalize(line);
-  const matches = [query.literal, ...query.terms, ...query.bigrams].map(term => normalized.indexOf(term)).filter(at => at >= 0);
-  const offset = matches.length ? Math.max(0, Math.min(...matches) - 55) : 0;
-  return line.slice(offset, offset + 420);
-}
 
 function sectionEnd(note, heading) {
   const next = note.headings.find(item => item.line > heading.line && item.depth <= heading.depth);
@@ -270,16 +229,23 @@ function projectedSection(note, grant) {
   let end = sectionEnd(note, anchor);
   while (end > start + 1 && !note.body[end - 1].trim()) end--;
   const body = note.body.slice(start, end);
+  const refs = new Map();
+  for (const link of note.linkPositions) {
+    if (link.line >= anchor.line && link.line <= note.bodyStart + end) {
+      const k = JSON.stringify([link.target, link.anchor || null]);
+      if (!refs.has(k)) refs.set(k, { target: link.target, anchor: link.anchor || null });
+    }
+  }
   return {
     path: note.path,
     revision: note.revision,
-    title: anchor.name,
+    title: note.title,
+    heading: anchor.name,
     body,
     index: note.searchBody.slice(start, end),
     bodyStart: anchor.line - 1,
     headings: note.headings.filter(item => item.line >= anchor.line && item.line <= note.bodyStart + end),
-    links: [...new Set(note.linkPositions.filter(link => link.line >= anchor.line && link.line <= note.bodyStart + end)
-      .map(link => link.target))].slice(0, 60)
+    linkRefs: [...refs.values()].slice(0, 60)
   };
 }
 
@@ -387,7 +353,7 @@ export function createProjection(vault, loadScope, { maintenance = false } = {})
         const score = headingScore * 2 + bestScore;
         if (!score) return;
         const line = note.bodyStart + bestRow + 1;
-        candidates.push({ grant, hit: { score, excerpt: excerptFor(note.body[bestRow], parsed), citation: citation(note, line, line, note.title) } });
+        candidates.push({ grant, hit: { score, excerpt: excerptFor(note.body[bestRow], parsed), citation: citation(note, line, line, note.heading) } });
       });
       const hits = new Map();
       for (const { grant, hit } of candidates) {
@@ -407,7 +373,7 @@ export function createProjection(vault, loadScope, { maintenance = false } = {})
       if (!heading) {
         if (notes.length !== 1) return unavailableResult();
         const [note] = notes;
-        return protectedExcerpt(note, 0, note.body.length, note.title);
+        return protectedExcerpt(note, 0, note.body.length, note.heading);
       }
 
       const matches = new Map();
@@ -415,7 +381,7 @@ export function createProjection(vault, loadScope, { maintenance = false } = {})
         for (const anchor of note.headings.filter(item => item.name === heading)) {
           const start = anchor.line - note.bodyStart - 1;
           // If two enclosing grants include the same anchor, prefer the explicitly requested grant.
-          if (!matches.has(anchor.line) || note.title === heading) {
+          if (!matches.has(anchor.line) || note.heading === heading) {
             matches.set(anchor.line, { note, start, end: sectionEnd(note, anchor) });
           }
         }
@@ -428,21 +394,42 @@ export function createProjection(vault, loadScope, { maintenance = false } = {})
     async explore({ document_id }) {
       if (!(await grants()).some(item => item.path === document_id)) return unavailableResult();
       const found = [];
-      const live = await visitNotes(undefined, ({ path, title, revision, links }, grant) => found.push({ path, title, revision, links, grant }));
+      const live = await visitNotes(undefined, ({ path, title, heading, revision, linkRefs }, grant) =>
+        found.push({ path, title, heading, revision, linkRefs, grant }));
       const notes = found.filter(note => live.has(note.grant));
       const origin = notes.filter(note => note.path === document_id);
       if (!origin.length) return unavailableResult();
-      const byPath = new Map(notes.map(note => [note.path, note]));
+      const sectionsByPath = new Map();
+      for (const note of notes) {
+        if (!sectionsByPath.has(note.path)) sectionsByPath.set(note.path, []);
+        sectionsByPath.get(note.path).push(note);
+      }
+      const uniqueRefs = new Map();
+      for (const sec of origin) {
+        for (const ref of sec.linkRefs) {
+          const refKey = JSON.stringify([ref.target, ref.anchor]);
+          if (!uniqueRefs.has(refKey)) uniqueRefs.set(refKey, ref);
+        }
+      }
       const relations = new Map();
-      for (const link of new Set(origin.flatMap(note => note.links))) {
-        const key = normalize(link.replace(/\.md$/i, ""));
-        const matches = [...byPath.values()].filter(note => {
-          const path = note.path.slice(0, -3);
-          return normalize(key.includes("/") ? path : basename(path)) === key;
+      for (const { target, anchor } of uniqueRefs.values()) {
+        const key = normalize(target.replace(/\.md$/i, ""));
+        const matchedPaths = [...sectionsByPath.keys()].filter(path => {
+          const base = path.slice(0, -3);
+          return normalize(key.includes("/") ? base : basename(base)) === key;
         });
-        if (matches.length === 1 && matches[0].path !== document_id) {
-          const note = matches[0];
-          relations.set(note.path, { document_id: note.path, title: note.title, heading: note.title, revision: note.revision, relation: "wikilink" });
+        if (matchedPaths.length === 1 && matchedPaths[0] !== document_id) {
+          const candidates = sectionsByPath.get(matchedPaths[0]);
+          const targets = anchor ? candidates.filter(note => normalize(note.heading) === normalize(anchor)) : candidates;
+          for (const note of targets) {
+            const k = JSON.stringify([note.path, note.heading]);
+            if (!relations.has(k)) {
+              relations.set(k, {
+                document_id: note.path, title: note.title, heading: note.heading,
+                revision: note.revision, relation: "wikilink"
+              });
+            }
+          }
         }
       }
       return { status: "ok", document_id, relations: [...relations.values()].slice(0, 12) };
