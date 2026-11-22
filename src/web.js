@@ -85,11 +85,22 @@ async function readJson(request) {
   return parsed;
 }
 
-async function state(api, tab) {
+function enrichJobs(jobs, feeds) {
+  if (!feeds) return jobs;
+  const map = feeds.jobFeedMap();
+  return jobs.map(job => ({ ...job, feed_id: map[job.id] || null }));
+}
+
+async function state(api, tab, feeds) {
   const workspace = await api.status();
   switch (tab) {
     case 'vault': return { workspace };
-    case 'maintenance': return { workspace, jobs: await api.jobs(), clients: await api.clients() };
+    case 'maintenance': return {
+      workspace,
+      jobs: enrichJobs(await api.jobs(), feeds),
+      feeds: feeds ? feeds.list() : [],
+      clients: await api.clients()
+    };
     case 'memory': return { workspace, memories: await api.memories(), clients: await api.clients() };
     case 'agents': return { workspace, clients: await api.clients(), shares: await api.shares(), audit: await api.audit() };
     default: throw new WebError(400, '工作台页面无效。');
@@ -108,7 +119,7 @@ function performAction(api, input) {
       requireConfirmation(input);
       return api.share({ client_id, path, heading, revision });
     case 'unshare':
-      return api.unshare({ client_id, path });
+      return api.unshare({ client_id, path, heading });
     case 'create-job':
       requireConfirmation(input);
       return api.createJob({ source, heading, revision, target, client_id });
@@ -131,7 +142,7 @@ function performAction(api, input) {
   }
 }
 
-async function respond(request, response, { authority, token, api, assets }) {
+async function respond(request, response, { authority, token, api, feeds, assets }) {
   applyHeaders(response);
   let route;
   try {
@@ -147,7 +158,7 @@ async function respond(request, response, { authority, token, api, assets }) {
     }
     assertOwner(request, token);
     if (request.method === 'GET' && route.pathname === '/api/state') {
-      sendJson(response, 200, await state(api, route.searchParams.get('tab') || 'vault'));
+      sendJson(response, 200, await state(api, route.searchParams.get('tab') || 'vault', feeds));
     } else if (request.method === 'GET' && route.pathname === '/api/tree') {
       sendJson(response, 200, await api.tree(route.searchParams.get('path') || ''));
     } else if (request.method === 'GET' && route.pathname === '/api/document') {
@@ -173,7 +184,7 @@ async function respond(request, response, { authority, token, api, assets }) {
   }
 }
 
-export async function serveWeb({ port = 0, token, api } = {}) {
+export async function serveWeb({ port = 0, token, api, feeds } = {}) {
   if (typeof token !== 'string' || !/^[a-f\d]{64}$/i.test(token)) {
     throw new Error('Web UI requires a 32-byte hexadecimal owner token.');
   }
@@ -183,7 +194,7 @@ export async function serveWeb({ port = 0, token, api } = {}) {
   }
   const server = createServer((request, response) => {
     const authority = `127.0.0.1:${server.address().port}`;
-    void respond(request, response, { authority, token, api, assets });
+    void respond(request, response, { authority, token, api, feeds, assets });
   });
   server.requestTimeout = 15000;
   server.headersTimeout = 10000;

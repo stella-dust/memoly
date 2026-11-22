@@ -1,44 +1,55 @@
 # WorkBuddy 接入和定时整理
 
-在本机 WorkBuddy 中使用 Memoly 的 stdio 连接器。用一个身份完成样例时，可授予查询、维护和候选提交。长期运行时可另设只带 `maintenance` 能力的定时整理身份，定时任务只看到分配给它的任务。
+WorkBuddy 在本机启动 Memoly 的 stdio 连接器。日常问答和定时整理可以使用两个连接器身份。定时身份只领取分配给它的整理任务，所有者在 Memoly 核对证据后决定是否写回。
 
-## 接入本机服务
+## 连接 WorkBuddy
 
-先完成 [README 的安装与 Vault 初始化](../README.md#先用一份合成-vault)。在使用该 Vault 状态目录的终端，创建连接器并生成配置。
+先完成 [样例 Vault 初始化](../README.md#1-用合成-vault-启动工作台)。用与工作台一致的状态目录运行 `memoly connector config workbuddy`。如果尚未创建查询身份，先运行 [首次查询](../README.md#2-给-workbuddy-的第一条查询授权)里的三个命令。
 
-```sh
-memoly connector add workbuddy --scopes knowledge,memory:submit,maintenance
-memoly connector config workbuddy
-```
+打开 WorkBuddy「专家·技能·连接器 → 连接器 → 自定义连接器 → 添加 MCP」。将生成 JSON 中的 `mcpServers` 条目合并到现有配置。保存后回连接器列表启用并按宿主提示信任，在新会话中选择它。配置保存绝对路径。移动 Node、Memoly 或状态目录后，重新生成并更新对应条目。 [WorkBuddy 连接器文档](https://open.workbuddy.cn/docs/connector)
 
-如果 README 步骤已经创建 `workbuddy`，直接使用 `config`。打开 WorkBuddy 的「专家·技能·连接器 → 连接器 → 自定义连接器 → 添加 MCP」。将 `mcpServers` 下名为 `memoly-workbuddy` 的条目合并到现有配置，保留其他连接器。保存后回列表启用并按宿主提示信任这个连接器。新会话选择该连接器并确认能看到预期工具。配置包含绝对路径，移动 Memoly、Node 或状态目录后重新生成。 [WorkBuddy 连接器文档](https://open.workbuddy.cn/docs/connector)
+`knowledge` 允许调用查询工具。具体文档要另外授权到章节。`maintenance` 允许领任务、读取授权来源与提交草稿。`memory:submit` 允许送记忆候选，所有者可将生效版本授予有 `memory:read` 的其他客户端。
 
-`memoly connector add` 只分配能力。查询特定原件前还需要通过工作台或 `memoly share` 授权当前章节。维护通过单独任务授权。`memory:submit` 只能送候选；要复用可信记忆，需由所有者批准并选定有 `memory:read` 的客户端。
+如需给 WorkBuddy 注入稳定的工具规范，可运行 `memoly skill path` 找到内置的 [memoly-agent](../skills/memoly-agent/SKILL.md) 与 [memoly-maintain](../skills/memoly-maintain/SKILL.md) 技能说明。
 
-## 用合成 Vault 立即运行一次
+## 先完成一次真实 MCP 往返
 
-在 Memoly Web UI「资料整理」创建任务，或执行以下命令。
+给样例 Vault 新建一个维护专用身份，并将生成的配置安装到 WorkBuddy。由相同的状态目录执行。
 
 ```sh
-memoly job add workbuddy inbox/shift-handoff.md 'Lockout review' notes/handoff-review.md
+memoly connector add workbuddy-maintenance --scopes maintenance
+memoly connector config workbuddy-maintenance
+memoly job add workbuddy-maintenance inbox/shift-handoff.md 'Lockout review' notes/handoff-review.md
 memoly job list
 ```
 
-选择 Memoly 连接器，把[维护 Prompt](../examples/workbuddy-maintenance.prompt.md)粘贴到新的 WorkBuddy 会话。核对 MCP 调用依次列出任务、读取指定证据、返回 `proposed`。回到 Web UI 核对来源、目标相对路径和拟写文本，再点击「批准并写入 Vault」。确认 `notes/handoff-review.md` 已创建，原件没有变化。再次执行会处理下一份待办，队列为空时返回 `no_work`。
+选中维护连接器，把[维护 Prompt](../examples/workbuddy-maintenance.prompt.md)发到新会话。查看运行过程，核对 `list_maintenance_jobs` 列出任务、`read_maintenance_job` 返回引用、`submit_maintenance` 返回 `proposed`。打开 Memoly「资料整理」，核对原文、目标和拟写内容，再点击「批准并写入 Vault」。读回 `notes/handoff-review.md` 并核对原件。
 
-## 配置周期性整理
+## 配置增量来源与本机日程
 
-1. 建议为周期性任务新建独立连接器 `memoly connector add workbuddy-maintenance --scopes maintenance`。用 `memoly connector config workbuddy-maintenance` 获取配置并安装。只向该身份分配想定期处理的任务。
-2. 在 WorkBuddy 左侧打开「定时任务」，手动新建**本地**任务。选一个单独的空工作空间和默认权限，添加上一步的 Memoly 连接器。使用[维护 Prompt](../examples/workbuddy-maintenance.prompt.md)。任务经 MCP 读取获准片段，工作空间无需指向 Vault；资料读取和候选提交由 Memoly 限定。保留结果在本机。
-3. 选择合适执行时间和频率。保存后，先通过任务卡「立即运行」用合成资料走查，再查看「运行记录」。看到 `proposed` 后到 Memoly 审核。看到 `no_work` 时可结束本轮。定时任务只负责提交候选，最终写入由 Vault 所有者在本机工作台进行。
-4. 真正设置固定频率后，用下一次运行记录核对计划触发。任务执行依赖本机在线和 WorkBuddy 正在运行；需宿主确认时会停在等待状态。可以暂停日程，或在 Memoly 撤销该连接器。 [WorkBuddy 定时任务文档](https://www.workbuddy.cn/docs/workbuddy/From-Beginner-to-Expert-Guide/Function-Description/Automation-Guide)
+`memoly feed` 适用于 `0.3.1` 候选。稳定版 `0.3.0` 的 WorkBuddy 日程仍可领取手工创建的任务。增量来源绑定维护身份、一篇 Markdown 的唯一章节和一个输出目录。该目录须已存在，且等于初始化时设定的 `--write-root` 或在其内部。
 
-## 常见结果
+```sh
+memoly feed add workbuddy-maintenance inbox/shift-handoff.md 'Lockout review' notes
+memoly feed list
+```
 
-| 现象 | 如何检查 |
+`feed list` 显示来源 ID。接入时可用 `memoly feed scan <id>` 主动扫描。`queued` 表示有任务待领取，`unchanged` 表示没有新增任务。之后由 WorkBuddy 每轮调用 `list_maintenance_jobs` 检查章节。重复扫描会复用同一原件版本的任务，已审批或有效退回的相同片段也不重新排队。如果在待审批期间原件变更导致旧卡失效，在工作台「退回任务」清理旧卡后，下一次扫描会自动为最新原件重新排队，不会漏掉变更章节。批准后写入授权目录内的新 Markdown（包含带中文名和既有子目录）。若已有主条目，由所有者按自己的 Vault 规则复核合并。先用上述样例验证，再配置真实来源。
+
+1. 在 WorkBuddy 打开「定时任务」，手动新建**本地**任务，选独立工作空间与维护连接器。复制[维护 Prompt](../examples/workbuddy-maintenance.prompt.md)。工作空间可为独立空目录，实际来源由 Memoly 的任务绑定。
+2. 选时间和频率。保存后先用任务卡「立即运行」核对工具调用，再观察下一次计划触发的实际记录。按需要选择 WorkBuddy 的任务权限，定时整理只需调用这三个维护工具。宿主要求交互确认时可在运行记录找到等待原因。
+3. 每次运行后在工作台核对待审候选。关闭 Web 工作台不影响 stdio 连接器启动。计划执行需要运行设备可用，且 WorkBuddy 可以在本机执行。
+4. 暂停日程可在 WorkBuddy 任务卡操作。`memoly feed disable <id>` 停止新增该来源的任务，已分配的任务仍可在工作台处理。需要收回整个身份时执行 `memoly connector revoke workbuddy-maintenance`。 [WorkBuddy 定时任务文档](https://www.workbuddy.cn/docs/workbuddy/From-Beginner-to-Expert-Guide/Function-Description/Automation-Guide)
+
+若版本的手动创建弹窗受阻，可从 WorkBuddy 的新会话请求创建任务，明确「本地」、绝对执行时间、频率和通知目的地。回到任务列表核对实际保存的配置和下一次执行时间。计划卡片、运行记录和 Memoly 回执分别验证。
+
+## 排错
+
+| 现象 | 检查 |
 | --- | --- |
-| 没有 Memoly 工具 | 确认 WorkBuddy 导入的是对应身份，连接器已启用。核对 Node、入口脚本和状态目录绝对路径，打开新会话。 |
-| `no_work` | 当前身份没有待整理任务。用 `memoly job list` 检查任务就绪以及是否分配给该身份。 |
-| `not_found_or_unavailable` | 检查任务或共享章节是否被撤回、原件是否已变更、身份是否对应该状态目录。约束变化后重新审核已获准的任务。 |
-| `proposed`，文件未新增 | 进「资料整理」复核提案。原件当前版本与目标仍有效时，经本人批准写回。 |
-| WorkBuddy 报成功，Memoly 没有回执 | 用「运行记录」核对真实 MCP 调用和工具返回。Agent 对话文本本身不证明工具调用或本机写入。 |
+| 没有 Memoly 工具 | 核对连接器已启用、绝对路径有效，当前会话选中正确身份。 |
+| `no_work` | 该身份没有当前可领任务。查 `memoly feed list` 和 `memoly job list`，确认来源章节存在，以及当前版本是否已处理。 |
+| `not_found_or_unavailable` | 检查任务分配与当前版本。来源如已变化，按原件重新检查新候选。 |
+| `proposed`，文件尚未写回 | 从「资料整理」打开候选，校对原文和目标路径并执行审批。 |
+| WorkBuddy 显示完成，Memoly 没有回执 | 打开该次「运行记录」，见到 MCP 工具调用和返回，再检查是否用了同一状态目录。 |
+| 任务到点未运行 | 查实际运行记录、设备在线状态与宿主确认。可用「立即运行」单独验证连接器。 |

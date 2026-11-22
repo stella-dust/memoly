@@ -54,7 +54,8 @@ function badge(text, style = '') {
 
 const labels = {
   pending: '待复核', proposed: '待发布', published: '已写入 Vault', rejected: '已退回',
-  active: '已生效', superseded: '已替代', revoked: '已撤回', expired: '已到期',
+  superseded: '已过期替代',
+  active: '已生效', revoked: '已撤回', expired: '已到期',
   preference: '偏好', decision: '决定', lesson: '经验', event: '事件', fact_update: '事实更正', feedback: '反馈'
 };
 
@@ -169,39 +170,52 @@ function runAction(form, action, handler, success, onSuccess = () => render(fals
   return form;
 }
 
+const inactiveMetaStatuses = new Set(['inbox', 'draft', 'archived', 'superseded']);
+
 function documentView(note, clientOptions) {
   const workspace = element('div', 'stack');
-  const draft = note.meta?.status === 'inbox';
+  const rawStatus = typeof note.meta?.status === 'string' ? note.meta.status.trim() : '';
+  const blockedStatus = inactiveMetaStatuses.has(rawStatus.toLowerCase()) ? rawStatus : '';
+  const isMarkdown = note.path.toLowerCase().endsWith('.md');
+  const sharableHeadings = isMarkdown ? uniqueHeadings(note) : [];
   workspace.append(
     element('header', 'panel-head', element('h2', '', note.title || note.path)),
     element('p', 'muted small digest', note.path),
     kv([['当前版本', element('code', 'digest', note.revision)], ['出处格式', '文件与行号']])
   );
-  if (draft) workspace.append(element('p', 'callout', '待整理笔记（inbox）。在 Vault 核准正文和状态后，可按新版本授权 Agent 读取。'));
+  if (blockedStatus) {
+    workspace.append(element('p', 'callout', `当前状态为 ${blockedStatus}，暂不可向外部 Agent 授权知识。在 Vault 核准正文和状态后，可按新版本授权读取；如有需要仍可先建立整理任务。`));
+  }
   workspace.append(lines(note.text));
   const supported = clientOptions.filter(client => client.active && client.scopes?.includes('knowledge'));
-  if (supported.length && !draft && note.headings?.length && note.path.toLowerCase().endsWith('.md')) {
-    const clients = select(supported.map(client => [client.id, client.id]), '选择可读取知识的 Agent');
-    const section = headingSelect(note);
-    const check = checkbox('允许这个 Agent 读取所选章节的当前版本。');
-    const form = element('form', 'stack',
-      field('Agent', clients), field('分享章节', section), check.view
-    );
-    const submit = button('授权这一版本', 'primary');
-    requireCheck(submit, check);
-    runAction(form, submit, () => ({
-      action: 'share', path: note.path, heading: section.value, client_id: clients.value,
-      revision: note.revision, confirm: check.value.checked
-    }), '已授权该 Agent 读取当前版本。', () => {
-      check.value.checked = false;
-    });
-    workspace.append(details('向 Agent 授权章节', form));
-  } else if (!supported.length && !draft) {
+  if (supported.length && !blockedStatus && isMarkdown) {
+    if (sharableHeadings.length) {
+      const clients = select(supported.map(client => [client.id, client.id]), '选择可读取知识的 Agent');
+      const section = headingSelect(note, sharableHeadings);
+      const check = checkbox('允许这个 Agent 读取所选章节的当前版本。');
+      const form = element('form', 'stack',
+        field('Agent', clients), field('分享章节', section), check.view
+      );
+      const submit = button('授权这一版本', 'primary');
+      requireCheck(submit, check);
+      runAction(form, submit, () => ({
+        action: 'share', path: note.path, heading: section.value, client_id: clients.value,
+        revision: note.revision, confirm: check.value.checked
+      }), '已授权该 Agent 读取当前版本。', () => {
+        check.value.checked = false;
+      });
+      workspace.append(details('向 Agent 授权章节', form));
+    } else {
+      workspace.append(element('p', 'callout', '当前 Markdown 笔记缺少唯一章节标题（无标题或存在同名标题），请调整唯一章节标题后再授权。'));
+    }
+  } else if (!supported.length && !blockedStatus && isMarkdown) {
     workspace.append(element('p', 'callout', '先在「Agent 接入」配置知识读取身份，再为指定章节授权。'));
   }
-  workspace.append(button('以此笔记新建整理任务', 'quiet', () => {
-    activate('maintenance');
-  }));
+  if (isMarkdown && sharableHeadings.length) {
+    workspace.append(button('以此笔记新建整理任务', 'quiet', () => {
+      activate('maintenance');
+    }));
+  }
   return workspace;
 }
 
@@ -217,11 +231,15 @@ function lines(text) {
     ? element('p', 'muted small', `预览前 ${numberLimit} 行，共 ${noteLines.length} 行。`) : null);
 }
 
-function headingSelect(note) {
+function uniqueHeadings(note) {
   const headings = (note.headings || []).filter(item => item.name);
   const counts = new Map();
   for (const item of headings) counts.set(item.name, 1 + (counts.get(item.name) || 0));
-  return select(headings.filter(item => counts.get(item.name) === 1).map(
+  return headings.filter(item => counts.get(item.name) === 1);
+}
+
+function headingSelect(note, headings = uniqueHeadings(note)) {
+  return select(headings.map(
     item => [item.name, `${item.name} · 第 ${item.line} 行`]
   ), '选择唯一标题的章节');
 }
@@ -341,48 +359,78 @@ function newJob(data) {
   return panel('新建整理任务', form);
 }
 
-function reviewDraft(job) {
+function reviewDraft(job, readSource) {
   const review = element('form', 'stack');
   const check = checkbox('我已核对原件、提案与写入路径。');
   const publish = button('批准并写入 Vault', 'primary');
-  const comparison = element('div', 'stack', element('p', 'muted small', '打开对照，核对原件和拟新建的内容。'));
-  const comparisonBox = details('对照原件与拟写入内容', comparison);
-  comparisonBox.addEventListener('toggle', async () => {
-    if (!comparisonBox.open || comparisonBox.dataset.loaded) return;
-    comparisonBox.dataset.loaded = 'true';
-    const evidence = await call(`/api/document?${pathQuery(job.source)}`).catch(() => null);
-    const order = evidence?.headings || [];
-    const start = order.findIndex(item => item.name === job.heading);
-    const entry = order[start];
-    const end = entry && order.slice(start + 1).find(item => item.depth <= entry.depth);
-    const excerpt = entry ? evidence.text.split(/\r?\n/).slice(entry.line - 1, end ? end.line - 1 : undefined).join('\n') : '';
-    comparison.replaceChildren(
-      evidence?.revision === job.revision ? badge('原件版本一致', 'good') : badge('无法复核原件版本', 'warn'),
-      excerpt && element('div', 'stack', element('h3', '', '当前原文章节'), element('pre', '', excerpt)),
-      element('div', 'split equal',
-        element('div', 'stack', element('h3', '', '写入前'), element('pre', '', '任务会新建笔记，现有文件不会被覆盖。')),
-        element('div', 'stack', element('h3', '', '拟写入正文'), element('pre', '', job.content || '提案正文为空。'))
-      )
-    );
-  });
+  check.value.disabled = true;
+  const source = element('div', 'comparison-side', element('h4', '', '原件节选'));
+  const sourceStatus = element('p', 'muted small', '正在读取原件…');
+  sourceStatus.setAttribute('role', 'status');
+  source.append(sourceStatus);
+  const proposal = element('pre', '', job.content || '提案正文为空。');
+  proposal.tabIndex = 0;
+  proposal.setAttribute('aria-label', '拟写入正文');
+  const comparisonBox = element('div', 'review-comparison', source,
+    element('div', 'comparison-side', element('h4', '', '拟写入正文'), proposal));
+
+  async function showEvidence() {
+    try {
+      const evidence = await readSource(job.source);
+      if (evidence.revision !== job.revision) {
+        sourceStatus.className = 'callout warn';
+        sourceStatus.textContent = `原件已变更（当前版本 ${evidence.revision}）。请按当前原件重建整理任务。`;
+        return;
+      }
+      const excerpt = evidence.text.split(/\r?\n/).slice(job.start_line - 1, job.end_line).join('\n');
+      const preview = element('pre', '', excerpt);
+      preview.tabIndex = 0;
+      preview.setAttribute('aria-label', '版本一致的原件节选');
+      sourceStatus.textContent = `第 ${job.start_line}–${job.end_line} 行 · 版本一致`;
+      source.append(preview);
+      check.value.disabled = false;
+    } catch {
+      sourceStatus.className = 'callout warn';
+      sourceStatus.textContent = '无法读取原件。请确认文件仍可访问，再刷新任务。';
+    }
+  }
 
   review.append(comparisonBox, check.view);
   requireCheck(publish, check);
+  void showEvidence();
   return runAction(review, publish, () => ({ action: 'publish-job', id: job.id, confirm: check.value.checked }),
     '提案已批准并写回 Vault。');
 }
 
-function renderJob(job) {
+function renderJob(job, readSource) {
+  const badges = element('div', 'actions',
+    job.feed_id ? badge('定时订阅', 'info') : null,
+    job.status === 'pending' ? badge('待 Agent 处理', 'info') : statusBadge(job.status));
   const summary = element('div', 'row',
     element('div', '', element('h3', '', job.title || job.target || job.id),
-      element('p', 'muted small digest', `${job.id} · ${job.client_id || '未分配'}`)),
-    job.status === 'pending' ? badge('待 Agent 处理', 'info') : statusBadge(job.status));
+      element('p', 'muted small digest', `${job.id} · ${job.client_id || '未分配'}${job.feed_id ? ` · 订阅 ${job.feed_id}` : ''}`)),
+    badges);
   const info = kv([['原件', job.source], ['章节', job.heading], ['写入范围', job.target],
     ['出处', job.start_line && `第 ${job.start_line}–${job.end_line} 行`],
     ['原件版本', job.revision && element('code', 'digest', job.revision)]]);
   const record = element('article', 'panel review-card', summary, info);
 
-  if (job.status === 'proposed') record.append(reviewDraft(job));
+  if (job.status === 'pending') {
+    const staleNotice = element('p', 'callout warn');
+    staleNotice.hidden = true;
+    staleNotice.setAttribute('role', 'status');
+    record.append(staleNotice);
+    void readSource(job.source).then(evidence => {
+      if (evidence.revision !== job.revision) {
+        staleNotice.textContent = `原件已变更（当前版本 ${evidence.revision}）。此待处理任务不会再被领取，可通过「更多操作 → 退回任务」清理。`;
+        staleNotice.hidden = false;
+      }
+    }).catch(() => {
+      staleNotice.textContent = '无法读取原件。此待处理任务暂不可执行，可核对 Vault 后再试或退回清理。';
+      staleNotice.hidden = false;
+    });
+  }
+  if (job.status === 'proposed') record.append(reviewDraft(job, readSource));
   if (job.status === 'pending' || job.status === 'proposed') {
     const reject = runAction(element('form', 'stack'),
       button('退回任务', 'quiet'), () => ({ action: 'reject-job', id: job.id }), '已退回。');
@@ -401,15 +449,36 @@ function renderJob(job) {
   return record;
 }
 
+function renderFeedsPanel(feeds = []) {
+  const list = element('div', 'stack');
+  if (!feeds.length) {
+    return panel('增量维护订阅', empty('尚未配置定时订阅。可用 memoly feed add <连接器> <原件> <章节> <输出目录> 添加。'));
+  }
+  for (const feed of feeds) {
+    list.append(element('div', 'row',
+      element('div', '',
+        element('strong', '', `${feed.source} · §${feed.heading}`),
+        element('p', 'muted small digest', `ID ${feed.id} · ${feed.client_id} → ${feed.output_dir}`)),
+      feed.enabled ? badge('启用', 'good') : badge('已停用', 'warn')));
+  }
+  return panel(`增量维护订阅（${feeds.length}）`, list);
+}
+
 function renderMaintenance(container, data) {
   const jobs = data.jobs;
+  const sources = new Map();
+  const readSource = path => {
+    if (!sources.has(path)) sources.set(path, call(`/api/document?${pathQuery(path)}`));
+    return sources.get(path);
+  };
   container.append(heading('资料整理', '先指定原件版本与写入路径，再审核 Agent 提案。',
     button('刷新任务', '', () => void render(false))));
   container.append(
-    element('div', 'split', newJob(data),
+    element('div', 'split maintenance-layout', newJob(data),
       element('section', 'stack',
         element('h2', '', `任务队列（${jobs.length}）`),
-        jobs.length ? jobs.map(renderJob) : panel(null, empty('还没有整理任务。'))))
+        jobs.length ? jobs.map(job => renderJob(job, readSource)) : panel(null, empty('还没有整理任务。')))),
+    renderFeedsPanel(data.feeds)
   );
 }
 
@@ -423,7 +492,7 @@ function memorySummary(row) {
   const metadata = kv([
     ['提交者', row.submitted_by], ['适用情景', row.context], ['来源', row.source],
     ['访问范围', audience], ['提交时间', localizedTime(row.submitted_at)],
-    ['有效期', localizedTime(row.expires_at)], ['基准版本', row.expected_version]
+    ['有效期', localizedTime(row.expires_at)], ['基准版本', row.status !== 'pending' && row.expected_version ? `v${row.expected_version}` : '']
   ]);
   return [title, content, metadata];
 }
@@ -474,10 +543,30 @@ function memoryActions(row) {
   return controls;
 }
 
-function memoryCard(row, eligible) {
+function memoryCard(row, eligible, current) {
   const card = element('article', 'panel review-card stack', memorySummary(row));
   if (row.status === 'pending') {
-    card.append(memoryApproval(row, eligible),
+    const expected = row.expected_version ?? null;
+    const currentVersion = current?.version ?? null;
+    const incompatible = current?.status === 'revoked' || currentVersion !== expected;
+    const currentLabel = currentVersion === null ? '无已发布版本' : `v${currentVersion}（${labels[current.status]}）`;
+    const versions = kv([['候选基准', expected === null ? '新条目' : `v${expected}`], ['当前版本', currentLabel]]);
+    card.append(versions);
+    if (incompatible) {
+      const warning = element('p', 'callout warn',
+        current?.status === 'revoked' ? '这条记忆已撤回。请退回候选。' : '基准版本已变化。请按当前版本重新提交候选。');
+      warning.setAttribute('role', 'status');
+      const blocked = button('本人确认并发布', 'primary');
+      blocked.disabled = true;
+      card.append(warning);
+      if (current?.status !== 'revoked' && currentVersion !== null) {
+        card.append(details('查看当前记忆', element('pre', '', current.statement)));
+      }
+      card.append(blocked);
+    } else {
+      card.append(memoryApproval(row, eligible));
+    }
+    card.append(
       details('更多操作', runAction(element('form', 'stack'),
         button('退回候选', 'quiet'), () => ({ action: 'reject-memory', id: row.candidate_id }), '已退回记忆候选。')));
   } else {
@@ -490,9 +579,11 @@ function renderMemory(container, data) {
   const group = ['pending', 'active', 'history'];
   const filters = [['pending', '待确认'], ['active', '已生效'], ['history', '历史']];
   const counts = new Map(group.map(state => [state, []]));
+  const latest = new Map();
   for (const row of data.memories) {
     const state = row.status === 'pending' || row.status === 'active' ? row.status : 'history';
     counts.get(state).push(row);
+    if (row.version !== null && row.version > (latest.get(row.key)?.version ?? 0)) latest.set(row.key, row);
   }
   const list = element('section', 'stack');
   list.setAttribute('aria-label', '记忆列表');
@@ -501,7 +592,7 @@ function renderMemory(container, data) {
   function choose(status) {
     const rows = counts.get(status);
     for (const item of segments.children) item.setAttribute('aria-pressed', String(item.dataset.status === status));
-    list.replaceChildren(...(rows.length ? rows.map(row => memoryCard(row, data.clients)) :
+    list.replaceChildren(...(rows.length ? rows.map(row => memoryCard(row, data.clients, latest.get(row.key))) :
       [panel(null, empty({
         pending: '暂无待确认的候选。可让已配置的 Agent 提交一条记忆。',
         active: '暂无已生效的记忆。',
@@ -522,8 +613,8 @@ function renderMemory(container, data) {
 function shareRow(share) {
   const metadata = kv([['笔记', share.path], ['章节', share.heading],
     ['版本', share.revision && element('code', 'digest', share.revision)]]);
-  const revoke = runAction(element('form', 'stack'), button('撤销笔记授权', 'danger'),
-    () => ({ action: 'unshare', client_id: share.client_id, path: share.path }), '已撤销这个 Agent 的笔记授权。');
+  const revoke = runAction(element('form', 'stack'), button('撤销章节授权', 'danger'),
+    () => ({ action: 'unshare', client_id: share.client_id, path: share.path, heading: share.heading }), '已撤销这个 Agent 的章节授权。');
   return element('div', 'row', element('div', '', element('h3', '', share.client_id), metadata),
     details('管理授权', revoke));
 }
@@ -544,7 +635,10 @@ function renderAgents(container, data) {
   const sharePanel = panel('已授权的知识版本', data.shares.length ? data.shares.map(shareRow) : empty('暂无对外授权。'));
   const audit = element('ol', 'log');
   for (const item of data.audit.slice(0, 20)) {
-    const metadata = [localizedTime(item.at || item.time || item.timestamp || item.ts), item.client_id || item.client, item.tool || item.action, item.status]
+    const actor = item.client_id || item.client;
+    const label = item.client_name ? `${actor} (${item.client_name})` : actor;
+    const version = item.revision !== null && item.revision !== undefined && item.revision !== '' ? `版本 ${item.revision}` : '';
+    const metadata = [localizedTime(item.at || item.time || item.timestamp || item.ts), label, item.tool || item.action, item.status, version]
       .filter(Boolean).join(' · ');
     audit.append(element('li', '', metadata || '本机事件'));
   }

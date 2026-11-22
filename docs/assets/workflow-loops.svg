@@ -1,0 +1,99 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 460" width="1120" height="460" role="img" aria-labelledby="wf-title wf-desc">
+  <title id="wf-title">Memoly Local Dual Workflows</title>
+  <desc id="wf-desc">Two closed-loop workflows: Incremental Maintenance and Owner Side-by-Side Review, and Cross-Agent Confirmed Memory Lifecycle.</desc>
+  <defs>
+    <marker id="arrow-b" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#4F46E5"/>
+    </marker>
+    <marker id="arrow-g" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#087455"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1120" height="460" rx="20" fill="#F6F7FB" stroke="#DCE2ED" stroke-width="2"/>
+  <text x="36" y="42" font-family="Inter, -apple-system, 'PingFang SC', sans-serif" font-size="20" font-weight="750" fill="#0F1528">Two Closed Loops · Evidence Before Publication, Owner Approval Before Shared Effect</text>
+
+  <!-- Loop A -->
+  <rect x="36" y="64" width="1048" height="176" rx="16" fill="#FFFFFF" stroke="#DCE2ED"/>
+  <text x="58" y="94" font-family="Inter, -apple-system, sans-serif" font-size="14" font-weight="750" fill="#2339A0">Loop A · Incremental Maintenance &amp; Side-by-Side Owner Review (Never Overwrites Existing Notes)</text>
+
+  <rect x="58" y="112" width="180" height="106" rx="10" fill="#F8FAFC" stroke="#CBD5E1"/>
+  <text x="72" y="136" font-family="Inter, sans-serif" font-size="12" font-weight="700" fill="#3452CF">1. Bind Feed or Job</text>
+  <text x="72" y="156" font-family="Inter, sans-serif" font-size="11.5" fill="#485068">memoly feed add pins</text>
+  <text x="72" y="172" font-family="Inter, sans-serif" font-size="11.5" fill="#485068">source §heading &amp;</text>
+  <text x="72" y="188" font-family="Inter, sans-serif" font-size="11.5" fill="#485068">output dir in --write-root</text>
+
+  <line x1="238" y1="165" x2="258" y2="165" stroke="#4F46E5" stroke-width="2" marker-end="url(#arrow-b)"/>
+
+  <rect x="262" y="112" width="186" height="106" rx="10" fill="#F8FAFC" stroke="#CBD5E1"/>
+  <text x="276" y="136" font-family="Inter, sans-serif" font-size="12" font-weight="700" fill="#3452CF">2. WorkBuddy Pass</text>
+  <text x="276" y="156" font-family="Inter, sans-serif" font-size="11.5" fill="#485068">list_maintenance_jobs →</text>
+  <text x="276" y="172" font-family="Inter, sans-serif" font-size="11.5" fill="#485068">read_maintenance_job →</text>
+  <text x="276" y="188" font-family="Inter, sans-serif" font-size="11.5" fill="#485068">submit_maintenance Draft</text>
+
+  <line x1="448" y1="165" x2="468" y2="165" stroke="#4F46E5" stroke-width="2" marker-end="url(#arrow-b)"/>
+
+  <rect x="472" y="112" width="192" height="106" rx="10" fill="#FFF7E8" stroke="#EFCB98"/>
+  <text x="486" y="136" font-family="Inter, sans-serif" font-size="12" font-weight="700" fill="#8C4D12">3. Side-by-Side Review</text>
+  <text x="486" y="156" font-family="Inter, sans-serif" font-size="11.5" fill="#485068">Compare source lines vs</text>
+  <text x="486" y="172" font-family="Inter, sans-serif" font-size="11.5" fill="#485068">proposed Markdown.</text>
+  <text x="486" y="188" font-family="Inter, sans-serif" font-size="11.5" fill="#8C4D12">Stale rev blocks approval!</text>
+
+  <line x1="664" y1="165" x2="684" y2="165" stroke="#4F46E5" stroke-width="2" marker-end="url(#arrow-b)"/>
+
+  <rect x="688" y="112" width="184" height="106" rx="10" fill="#ECFDF5" stroke="#A7F3D0"/>
+  <text x="702" y="136" font-family="Inter, sans-serif" font-size="12" font-weight="700" fill="#065F46">4. Write notes/ Draft</text>
+  <text x="702" y="156" font-family="Inter, sans-serif" font-size="11.5" fill="#485068">New UTF-8 Markdown with</text>
+  <text x="702" y="172" font-family="Inter, sans-serif" font-size="11.5" fill="#485068">frontmatter + Lx-Ly</text>
+  <text x="702" y="188" font-family="Inter, sans-serif" font-size="11.5" fill="#485068">revision &amp; planned timestamp</text>
+
+  <line x1="872" y1="165" x2="892" y2="165" stroke="#4F46E5" stroke-width="2" marker-end="url(#arrow-b)"/>
+
+  <rect x="896" y="112" width="166" height="106" rx="10" fill="#EEF2FF" stroke="#C7D2FE"/>
+  <text x="910" y="136" font-family="Inter, sans-serif" font-size="12" font-weight="700" fill="#2339A0">5. Canonical Merge</text>
+  <text x="910" y="156" font-family="Inter, sans-serif" font-size="11.5" fill="#485068">Human reviews draft</text>
+  <text x="910" y="172" font-family="Inter, sans-serif" font-size="11.5" fill="#485068">in Obsidian &amp; merges</text>
+  <text x="910" y="188" font-family="Inter, sans-serif" font-size="11.5" fill="#485068">into project/MOC note</text>
+
+  <!-- Loop B -->
+  <rect x="36" y="258" width="1048" height="176" rx="16" fill="#FFFFFF" stroke="#DCE2ED"/>
+  <text x="58" y="288" font-family="Inter, -apple-system, sans-serif" font-size="14" font-weight="750" fill="#065F46">Loop B · Cross-Agent Confirmed Memory State Machine (Unapproved, Rogue, &amp; Revoked Never Leak)</text>
+
+  <rect x="58" y="306" width="180" height="106" rx="10" fill="#FFF7E8" stroke="#EFCB98"/>
+  <text x="72" y="330" font-family="Inter, sans-serif" font-size="12" font-weight="700" fill="#8C4D12">1. Pending Candidate</text>
+  <text x="72" y="350" font-family="Inter, sans-serif" font-size="11.5" fill="#485068">Agent A calls submit_memory</text>
+  <text x="72" y="366" font-family="Inter, sans-serif" font-size="11.5" fill="#485068">Status: pending.</text>
+  <text x="72" y="384" font-family="ui-monospace, monospace" font-size="10.5" fill="#9F1239">Codex: not_found</text>
+
+  <line x1="238" y1="359" x2="258" y2="359" stroke="#087455" stroke-width="2" marker-end="url(#arrow-g)"/>
+
+  <rect x="262" y="306" width="186" height="106" rx="10" fill="#ECFDF5" stroke="#A7F3D0"/>
+  <text x="276" y="330" font-family="Inter, sans-serif" font-size="12" font-weight="700" fill="#065F46">2. Owner Approves v1</text>
+  <text x="276" y="350" font-family="Inter, sans-serif" font-size="11.5" fill="#485068">Pick readers (e.g. [codex])</text>
+  <text x="276" y="366" font-family="Inter, sans-serif" font-size="11.5" fill="#485068">&amp; optional expiry date.</text>
+  <text x="276" y="384" font-family="Inter, sans-serif" font-size="11.5" fill="#065F46">Becomes active v1.</text>
+
+  <line x1="448" y1="359" x2="468" y2="359" stroke="#087455" stroke-width="2" marker-end="url(#arrow-g)"/>
+
+  <rect x="472" y="306" width="192" height="106" rx="10" fill="#F8FAFC" stroke="#CBD5E1"/>
+  <text x="486" y="330" font-family="Inter, sans-serif" font-size="12" font-weight="700" fill="#0F1528">3. Cross-Agent Reuse</text>
+  <text x="486" y="350" font-family="Inter, sans-serif" font-size="11.5" fill="#485068">Codex calls read_memory</text>
+  <text x="486" y="366" font-family="Inter, sans-serif" font-size="11.5" fill="#485068">or search_memory (CJK ok).</text>
+  <text x="486" y="384" font-family="ui-monospace, monospace" font-size="10.5" fill="#065F46">Unlisted agent: denied</text>
+
+  <line x1="664" y1="359" x2="684" y2="359" stroke="#087455" stroke-width="2" marker-end="url(#arrow-g)"/>
+
+  <rect x="688" y="306" width="184" height="106" rx="10" fill="#F8FAFC" stroke="#CBD5E1"/>
+  <text x="702" y="330" font-family="Inter, sans-serif" font-size="12" font-weight="700" fill="#0F1528">4. Pending Edit → v2</text>
+  <text x="702" y="350" font-family="Inter, sans-serif" font-size="11.5" fill="#485068">expected_version=1 queued.</text>
+  <text x="702" y="366" font-family="Inter, sans-serif" font-size="11.5" fill="#485068">Readers keep v1 until</text>
+  <text x="702" y="384" font-family="Inter, sans-serif" font-size="11.5" fill="#3452CF">owner publishes v2.</text>
+
+  <line x1="872" y1="359" x2="892" y2="359" stroke="#087455" stroke-width="2" marker-end="url(#arrow-g)"/>
+
+  <rect x="896" y="306" width="166" height="106" rx="10" fill="#FFF1F2" stroke="#FECDD3"/>
+  <text x="910" y="330" font-family="Inter, sans-serif" font-size="12" font-weight="700" fill="#9F1239">5. Instant Revoke</text>
+  <text x="910" y="350" font-family="Inter, sans-serif" font-size="11.5" fill="#485068">Owner revokes key.</text>
+  <text x="910" y="366" font-family="Inter, sans-serif" font-size="11.5" fill="#485068">Next read returns:</text>
+  <text x="910" y="384" font-family="ui-monospace, monospace" font-size="10.2" fill="#9F1239">not_found_or_unavail</text>
+</svg>

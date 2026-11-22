@@ -96,6 +96,37 @@ test("CLI-generated connectors isolate credentials, scope Vault evidence and pub
     assert.equal((await call(reader, "search_knowledge", { query: "fittings" })).status, "not_found_or_unavailable");
     await assert.rejects(cli("connector", "add", "reader", "--scopes", "knowledge"));
     assert.ok(store.api.audit().some(event => event.tool === "submit_maintenance" && event.target_id === task.id && event.status === "proposed"));
+
+    // Verify bundled skills command & loopback Web UI maintenance feeds + audit visibility
+    const skillInfo = JSON.parse((await exec(process.execPath, [cliFile, "skill", "list"])).stdout);
+    assert.deepEqual(skillInfo.skills.map(s => s.name), ["memoly-agent", "memoly-maintain", "memoly-operator"]);
+
+    const { createFeeds } = await import("../src/feeds.js");
+    const { serveWeb } = await import("../src/web.js");
+    const feeds = createFeeds(store);
+    const webToken = "0".repeat(64);
+    const { server, origin } = await serveWeb({ port: 0, token: webToken, api: store.api, feeds });
+    try {
+      await feeds.add("writer", "guide.md", "Visible", "notes");
+      const mRes = await fetch(`${origin}/api/state?tab=maintenance`, { headers: { Authorization: `Bearer ${webToken}` } });
+      assert.equal(mRes.status, 200);
+      const mData = await mRes.json();
+      assert.equal(mData.feeds.length, 1);
+
+      const aRes = await fetch(`${origin}/api/state?tab=agents`, { headers: { Authorization: `Bearer ${webToken}` } });
+      const aData = await aRes.json();
+      assert.ok(aData.audit.some(ev => ev.client_name === "WorkBuddy" && ev.revision));
+
+      const badUnshare = await fetch(`${origin}/api/action`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${webToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "unshare", client_id: "reader", path: "guide.md", heading: "Typo" })
+      });
+      assert.equal(badUnshare.status, 404);
+    } finally {
+      server.close();
+      feeds.close();
+    }
   } finally {
     await Promise.allSettled(clients.map(client => client.close()));
     store?.close();

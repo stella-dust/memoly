@@ -32,6 +32,17 @@ test("a candidate carries no read authority; corrections detect stale bases and 
     const attempt = memory.submit("writer", { key, statement: "Old transfer.", expected_version: 2 });
     assert.throws(() => memory.approve(attempt.candidate_id, { readers: ["reader"] }), { code: "memory_version_conflict" });
     assert.equal(memory.list().find(row => row.candidate_id === stale.candidate_id).status, "rejected");
+
+    // P1-6b: Chinese space-separated & punctuation-folded memory search
+    const zh = memory.submit("writer", {
+      key: "zh-handoff-rule",
+      statement: "交接说明：异常、复核后先列风险，再列里程碑。",
+      context: "中文夜班场景"
+    });
+    memory.approve(zh.candidate_id, { readers: ["reader"] });
+    assert.equal(memory.search("reader", { query: "交接 风险" }).results[0].key, "zh-handoff-rule");
+    assert.equal(memory.search("reader", { query: "异常复核" }).results[0].key, "zh-handoff-rule");
+    assert.equal(memory.search("other", { query: "交接 风险" }).status, "no_evidence");
   } finally {
     db.close();
   }

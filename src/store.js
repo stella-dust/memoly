@@ -2,7 +2,7 @@ import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypt
 import { constants, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, closeSync, fstatSync, writeFileSync, linkSync, unlinkSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { createProjection, inspectNote, listFolder, makeVault } from "./vault.js";
+import { createProjection, inspectNote, listFolder, makeVault, MAX_SHARED_SECTIONS } from "./vault.js";
 import { createMemory } from "./memory.js";
 
 export const scopes = ["knowledge", "memory:read", "memory:submit", "maintenance"];
@@ -22,13 +22,25 @@ function relativeParts(value) {
 }
 
 function directory(root, relative) {
-  let path = root;
-  for (const part of relativeParts(relative)) {
-    path = join(path, part);
-    if (!lstatSync(path).isDirectory()) throw fail("输出目录必须已存在且不经过符号链接");
+  try {
+    if (!lstatSync(root).isDirectory()) throw fail("Vault 根目录不可用或已被替换");
+    let path = root;
+    for (const part of relativeParts(relative)) {
+      path = join(path, part);
+      if (!lstatSync(path).isDirectory()) throw fail("输出目录必须已存在且不经过符号链接");
+    }
+    return path;
+  } catch (error) {
+    if (["ENOENT", "ENOTDIR", "ELOOP", "EACCES", "EPERM"].includes(error?.code)) {
+      throw fail("输出目录必须已存在且不经过符号链接");
+    }
+    throw error;
   }
-  return path;
 }
+
+const unsafeOutputName = part => part.toLowerCase() === "node_modules" ||
+  /[<>"|?*]/u.test(part) || part.trim() !== part || part.endsWith(".") ||
+  /^(?:con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³])(?:\.|$)/iu.test(part);
 
 function requirePrivate(path, asDirectory) {
   const stat = lstatSync(path);
@@ -57,6 +69,32 @@ function tokenFile(path) {
   }
 }
 
+const sharedSectionsSchema = `CREATE TABLE IF NOT EXISTS shared_sections (
+  client_id TEXT NOT NULL REFERENCES connectors(id), path TEXT NOT NULL, heading TEXT NOT NULL, revision TEXT NOT NULL,
+  PRIMARY KEY (client_id, path, heading)
+);`;
+
+function migrateStore(db) {
+  const legacyShares = () => db.prepare("PRAGMA table_info(shared_sections)").all().some(row => row.name === "heading" && !row.pk);
+  const lacksPublishPlan = () => !db.prepare("PRAGMA table_info(maintenance_jobs)").all().some(row => row.name === "publish_planned_at");
+  const lacksStaleReject = () => !db.prepare("PRAGMA table_info(maintenance_jobs)").all().some(row => row.name === "stale_on_reject");
+  if (!legacyShares() && !lacksPublishPlan() && !lacksStaleReject()) return;
+  transaction(db, () => {
+    // Recheck after acquiring the write lock, since several connectors may start together.
+    if (legacyShares()) {
+      db.exec(`
+        ALTER TABLE shared_sections RENAME TO shared_sections_legacy;
+        ${sharedSectionsSchema}
+        INSERT INTO shared_sections (client_id, path, heading, revision)
+          SELECT client_id, path, heading, revision FROM shared_sections_legacy;
+        DROP TABLE shared_sections_legacy;
+      `);
+    }
+    if (lacksPublishPlan()) db.exec("ALTER TABLE maintenance_jobs ADD COLUMN publish_planned_at TEXT");
+    if (lacksStaleReject()) db.exec("ALTER TABLE maintenance_jobs ADD COLUMN stale_on_reject INTEGER NOT NULL DEFAULT 0");
+  });
+}
+
 function dbAt(state, create) {
   const path = join(state, "memoly.sqlite");
   if (create) {
@@ -73,22 +111,20 @@ function dbAt(state, create) {
     CREATE TABLE IF NOT EXISTS connectors (
       id TEXT PRIMARY KEY, scopes TEXT NOT NULL, token_hash TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1
     );
-    CREATE TABLE IF NOT EXISTS shared_sections (
-      client_id TEXT NOT NULL REFERENCES connectors(id), path TEXT NOT NULL, heading TEXT NOT NULL, revision TEXT NOT NULL,
-      PRIMARY KEY (client_id, path)
-    );
+    ${sharedSectionsSchema}
     CREATE TABLE IF NOT EXISTS maintenance_jobs (
       id TEXT PRIMARY KEY, client_id TEXT NOT NULL REFERENCES connectors(id),
       source TEXT NOT NULL, heading TEXT NOT NULL, revision TEXT NOT NULL, target TEXT NOT NULL UNIQUE,
       status TEXT NOT NULL DEFAULT 'pending', created_at TEXT NOT NULL,
       start_line INTEGER NOT NULL, end_line INTEGER NOT NULL, title TEXT, content TEXT,
-      output_revision TEXT, published_at TEXT
+      output_revision TEXT, published_at TEXT, publish_planned_at TEXT, stale_on_reject INTEGER NOT NULL DEFAULT 0
     );
     CREATE TABLE IF NOT EXISTS activity (
       sequence INTEGER PRIMARY KEY, at TEXT NOT NULL, client TEXT NOT NULL, client_name TEXT,
       tool TEXT NOT NULL, status TEXT NOT NULL, target_id TEXT, revision TEXT
     );
   `);
+  migrateStore(db);
   return db;
 }
 
@@ -105,24 +141,33 @@ function transaction(db, apply) {
 }
 
 function scopedProjection(vault, entries, options) {
-  return createProjection(vault, async () => {
-    const rows = entries();
-    return {
-      documents: rows.map(({ path }) => path),
-      sections: Object.fromEntries(rows.map(({ path, heading, revision }) => [path, { heading, revision }]))
-    };
-  }, options);
+  return createProjection(vault, entries, options);
 }
 
 function formatOutput(row, publishedAt) {
-  const date = publishedAt.slice(0, 10);
+  const created = row.created_at.slice(0, 10);
+  const updated = publishedAt.slice(0, 10);
   const source = row.source + "#L" + row.start_line + "-L" + row.end_line;
   return [
-    "---", "title: " + JSON.stringify(row.title), "created: " + date, "updated: " + date,
+    "---", "title: " + JSON.stringify(row.title), "created: " + created, "updated: " + updated,
     "type: knowledge", "status: inbox", "tags: [memoly]", "sources: [" + JSON.stringify(source) + "]",
     "---", "", "# " + row.title, "", row.content, "",
     "来源版本 `" + row.revision + "` · L" + row.start_line + "–L" + row.end_line, ""
   ].join("\n");
+}
+
+function matchesOutput(path, text) {
+  let fd;
+  try {
+    fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    const stat = fstatSync(fd);
+    return stat.isFile() && stat.size === Buffer.byteLength(text) && readFileSync(fd, "utf8") === text;
+  } catch (error) {
+    if (["ENOENT", "ELOOP", "EISDIR"].includes(error.code)) return false;
+    throw error;
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+  }
 }
 
 export async function initStore(path, vaultPath, writeRoot) {
@@ -149,6 +194,10 @@ export async function openStore(path, { requireVault = true } = {}) {
   const db = dbAt(state, false);
   const config = Object.fromEntries(db.prepare("SELECT name,value FROM settings").all().map(({ name, value }) => [name, value]));
   const vault = requireVault ? await makeVault(config.vault) : { root: config.vault, name: basename(config.vault) };
+  if (vault.root !== config.vault) {
+    db.close();
+    throw fail("Vault 路径已变更，请确认并重新初始化状态目录");
+  }
   const writeRoot = config.write_root || null;
   const memory = createMemory(db);
   const getClient = (id) => {
@@ -165,19 +214,30 @@ export async function openStore(path, { requireVault = true } = {}) {
     if (!row?.active || !/^[a-f0-9]{64}$/.test(credential)) return null;
     return timingSafeEqual(Buffer.from(row.token_hash), Buffer.from(fingerprint(credential))) ? getClient(id) : null;
   };
-  const shares = () => db.prepare("SELECT * FROM shared_sections ORDER BY client_id,path").all();
+  const shares = () => db.prepare("SELECT * FROM shared_sections ORDER BY client_id,path,heading").all();
   const jobs = () => db.prepare("SELECT * FROM maintenance_jobs ORDER BY created_at DESC").all();
   const findJob = (id) => db.prepare("SELECT * FROM maintenance_jobs WHERE id = ?").get(id);
   const section = (source, heading, revision) => {
     const projection = scopedProjection(vault, () => [{ path: source, heading, revision }], { maintenance: true });
     return projection.read({ document_id: source, heading, revision });
   };
-  const targetPath = (target) => {
-    relativeParts(target);
-    if (!writeRoot || dirname(target) !== writeRoot || !/^[a-z0-9]+(?:-[a-z0-9]+)*\.md$/.test(basename(target))) {
-      throw fail("只可在配置的输出目录内新建小写英文 Markdown");
+  const validateOutputDirectory = (output) => {
+    const parts = relativeParts(output);
+    const rootParts = writeRoot ? relativeParts(writeRoot) : [];
+    if (!writeRoot || parts.length < rootParts.length || rootParts.some((part, index) => part !== parts[index]) ||
+        parts.slice(rootParts.length).some(unsafeOutputName)) {
+      throw fail("输出目录必须位于已选写入目录之内");
     }
-    return join(directory(vault.root, writeRoot), basename(target));
+    return directory(vault.root, output);
+  };
+  const targetPath = (target) => {
+    const parts = relativeParts(target);
+    const rootParts = writeRoot ? relativeParts(writeRoot) : [];
+    if (!writeRoot || parts.length <= rootParts.length || rootParts.some((part, index) => part !== parts[index]) ||
+        parts.slice(rootParts.length).some(unsafeOutputName) || !/\.md$/i.test(parts.at(-1))) {
+      throw fail("只可在获准的输出目录及既有子目录中创建 Markdown");
+    }
+    return join(directory(vault.root, parts.slice(0, -1).join("/")), parts.at(-1));
   };
 
   function audit({ client = "owner", clientName = null, tool, status, id = null, revision = null }) {
@@ -227,6 +287,7 @@ export async function openStore(path, { requireVault = true } = {}) {
     status: () => ({ vault, writeRoot, shares: shares().length }),
     tree: (path) => listFolder(vault, path),
     note: (path) => inspectNote(vault, path),
+    maintenanceEvidence: section,
     clients: () => db.prepare("SELECT id,scopes,active FROM connectors ORDER BY id").all().map(row => ({
       ...row, active: Boolean(row.active), scopes: JSON.parse(row.scopes)
     })),
@@ -237,21 +298,30 @@ export async function openStore(path, { requireVault = true } = {}) {
       if ((await projection.read({ document_id: path, heading, revision })).status !== "ok") throw absent();
       return transaction(db, () => {
         expectClient(id, "knowledge");
-        const count = db.prepare("SELECT count(*) AS count FROM shared_sections WHERE client_id=? AND path<>?").get(id, path).count;
-        if (count >= 80) throw fail("每个连接器最多共享 80 个文档");
-        db.prepare("INSERT INTO shared_sections VALUES (?,?,?,?) ON CONFLICT(client_id,path) DO UPDATE SET heading=excluded.heading,revision=excluded.revision")
+        const count = db.prepare(`SELECT count(*) AS count FROM shared_sections
+          WHERE client_id=? AND (path<>? OR heading<>?)`).get(id, path, heading).count;
+        if (count >= MAX_SHARED_SECTIONS) throw fail(`每个连接器最多共享 ${MAX_SHARED_SECTIONS} 个章节`);
+        db.prepare("INSERT INTO shared_sections VALUES (?,?,?,?) ON CONFLICT(client_id,path,heading) DO UPDATE SET revision=excluded.revision")
           .run(id, path, heading, revision);
         audit({ tool: "share_knowledge", status: "ok", id: path, revision });
         return { status: "ok" };
       });
     },
-    unshare({ client_id: id, path }) {
-      db.prepare("DELETE FROM shared_sections WHERE client_id=? AND path=?").run(id, path);
+    unshare({ client_id: id, path, heading }) {
+      let result;
+      if (heading === undefined) {
+        result = db.prepare("DELETE FROM shared_sections WHERE client_id=? AND path=?").run(id, path);
+      } else {
+        if (typeof heading !== "string" || !heading.trim()) throw fail("章节标题不能为空");
+        result = db.prepare("DELETE FROM shared_sections WHERE client_id=? AND path=? AND heading=?").run(id, path, heading);
+      }
+      if (!Number(result.changes)) throw absent();
       audit({ tool: "unshare_knowledge", status: "ok", id: path });
-      return { status: "ok" };
+      return { status: "ok", removed: Number(result.changes) };
     },
+    validateOutputDirectory,
     jobs,
-    async createJob({ source, heading, revision, target, client_id: id }) {
+    async createJob({ source, heading, revision, target, client_id: id, auditClient = "owner", auditTool = "approve_job_input" }) {
       expectClient(id, "maintenance");
       if (source === target) throw fail("原件和输出文件必须分开");
       const targetFile = targetPath(target);
@@ -274,7 +344,7 @@ export async function openStore(path, { requireVault = true } = {}) {
         if (error.errcode === 2067) throw conflict("输出已被另一个任务占用");
         throw error;
       }
-      audit({ tool: "approve_job_input", status: "pending", id: taskId, revision });
+      audit({ client: auditClient, tool: auditTool, status: "pending", id: taskId, revision });
       return { id: taskId, status: "pending" };
     },
     async publishJob(id) {
@@ -283,12 +353,15 @@ export async function openStore(path, { requireVault = true } = {}) {
       if (row?.status !== "proposed") throw absent();
       const evidence = await section(row.source, row.heading, row.revision);
       if (evidence.status !== "ok") throw conflict("原件版本已经变化，请在新任务中复核");
+      // Commit the plan before touching disk so an interrupted write can be replayed byte for byte.
+      db.prepare("UPDATE maintenance_jobs SET publish_planned_at=? WHERE id=? AND status='proposed' AND publish_planned_at IS NULL")
+        .run(new Date().toISOString(), id);
       return transaction(db, () => {
         const current = findJob(id);
         if (current.status === "published") return { status: "published", output_revision: current.output_revision };
         if (current.status !== "proposed") throw absent();
         const target = targetPath(current.target);
-        const publishedAt = current.created_at;
+        const publishedAt = current.publish_planned_at;
         const text = formatOutput(current, publishedAt);
         const temporary = join(dirname(target), ".memoly-" + randomUUID() + ".tmp");
         writeFileSync(temporary, text, { flag: "wx", mode: 0o600 });
@@ -296,8 +369,7 @@ export async function openStore(path, { requireVault = true } = {}) {
           linkSync(temporary, target);
         } catch (error) {
           if (error.code !== "EEXIST") throw error;
-          const stat = lstatSync(target);
-          if (!stat.isFile() || stat.size !== Buffer.byteLength(text) || readFileSync(target, "utf8") !== text) {
+          if (!matchesOutput(target, text)) {
             throw conflict("输出已存在，Memoly 保留现有文件");
           }
         } finally {
@@ -305,13 +377,25 @@ export async function openStore(path, { requireVault = true } = {}) {
         }
         const revision = fingerprint(text).slice(0, 16);
         db.prepare("UPDATE maintenance_jobs SET status='published',output_revision=?,published_at=? WHERE id=?")
-          .run(revision, new Date().toISOString(), id);
+          .run(revision, publishedAt, id);
         audit({ tool: "publish_job", status: "published", id, revision });
         return { status: "published", output_revision: revision };
       });
     },
-    rejectJob(id) {
-      const result = db.prepare("UPDATE maintenance_jobs SET status='rejected' WHERE id=? AND status IN ('pending','proposed')").run(id);
+    async rejectJob(id) {
+      const row = findJob(id);
+      if (!row || !["pending", "proposed"].includes(row.status)) throw absent();
+      let stale = row.status === "pending" ? 1 : 0;
+      if (!stale) {
+        try {
+          const evidence = await section(row.source, row.heading, row.revision);
+          if (evidence.status !== "ok" || evidence.truncated) stale = 1;
+        } catch {
+          stale = 1;
+        }
+      }
+      const result = db.prepare("UPDATE maintenance_jobs SET status='rejected', stale_on_reject=? WHERE id=? AND status IN ('pending','proposed')")
+        .run(stale, id);
       if (!Number(result.changes)) throw absent();
       audit({ tool: "reject_job", status: "rejected", id });
       return { status: "rejected" };
@@ -341,7 +425,7 @@ export async function openStore(path, { requireVault = true } = {}) {
   return {
     state, api, memory, maintenance, audit, getClient,
     projection(id) {
-      return scopedProjection(vault, () => db.prepare("SELECT path,heading,revision FROM shared_sections WHERE client_id=? ORDER BY path").all(id));
+      return scopedProjection(vault, () => getClient(id)?.active ? db.prepare("SELECT path,heading,revision FROM shared_sections WHERE client_id=? ORDER BY path,heading").all(id) : []);
     },
     register(id, requestedScopes) {
       if (!cleanId(id) || !Array.isArray(requestedScopes) || !requestedScopes.length ||

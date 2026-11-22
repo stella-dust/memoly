@@ -27,7 +27,7 @@ jobs:
       - name: Install the packaged CLI into a clean prefix
         shell: bash
         run: |
-          npm pack --ignore-scripts
+          package_file="$(npm pack --ignore-scripts --silent)"
           release_test_dir="$(mktemp -d)"
-          npm install --global --prefix "$release_test_dir" --ignore-scripts ./memoly-local-0.3.0.tgz
+          npm install --global --prefix "$release_test_dir" --ignore-scripts "./$package_file"
           "$release_test_dir/bin/memoly" doctor
