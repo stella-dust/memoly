@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>Memoly · 本机工作台</title>
+<link rel="stylesheet" href="/workspace.css">
+<script defer src="/workspace.js"></script>
+</head>
+<body>
+<a class="skip" href="#content">跳到主内容</a>
+<header class="bar">
+  <a class="brand" href="/" aria-label="Memoly"><span class="mark" aria-hidden="true">M</span>Memoly</a>
+  <span class="bar-division"></span><strong class="bar-title">个人工作台</strong>
+  <div class="bar-right"><span class="status-dot" aria-hidden="true"></span><span>本机服务</span></div>
+</header>
+<div class="shell">
+  <aside class="rail" aria-label="工作台导航">
+    <div class="space"><span class="space-icon" aria-hidden="true">▤</span><div><strong>个人空间</strong><small>开源本机版</small></div></div>
+    <nav aria-label="功能" id="nav" hidden>
+      <button type="button" data-tab="vault" aria-current="page">知识 Vault</button>
+      <button type="button" data-tab="maintenance">资料整理</button>
+      <button type="button" data-tab="memory">个人记忆</button>
+      <button type="button" data-tab="agents">Agent 接入</button>
+    </nav>
+    <div class="rail-foot">本机回环 · 仅本人管理</div>
+  </aside>
+  <main id="content" tabindex="-1">
+    <div class="wrap">
+      <h1>打开本机工作台</h1>
+      <p class="muted">正在检查本机会话。</p>
+      <noscript>此工作台需要 JavaScript。</noscript>
+    </div>
+  </main>
+</div>
+<div id="notice" role="status" aria-live="polite"></div>
+</body>
+</html>

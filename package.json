@@ -1,0 +1,36 @@
+{
+  "name": "memoly-local",
+  "version": "0.3.0",
+  "description": "Local Vault maintenance and portable, confirmed memory for desktop agents",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "bin": {
+    "memoly": "bin/memoly.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "skills",
+    "examples",
+    "docs",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "scripts": {
+    "test": "node --test",
+    "start": "node bin/memoly.js serve"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/stella-dust/memoly.git"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "yaml": "2.9.1",
+    "zod": "4.6.7"
+  }
+}

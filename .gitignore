@@ -1,0 +1,11 @@
+node_modules/
+*.tgz
+.DS_Store
+.env
+.env.*
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.key
+.local/

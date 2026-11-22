@@ -1,0 +1,5 @@
+Memoly Local
+
+This project includes its own Memoly prototype-derived code and uses separate
+Node.js dependencies under their respective licenses. See package-lock.json
+for dependency versions and npm package metadata for their licenses.
