@@ -136,6 +136,13 @@ nav button[aria-current="page"]{background:var(--accent-bg);color:var(--accent-d
 .review-card details{padding:8px 0 0}
 .review-card details>summary{min-height:34px;cursor:pointer;color:var(--accent-deep)}
 .review-card details[open]>summary{margin-bottom:7px}
+.maintenance-layout{grid-template-columns:minmax(250px,.54fr) minmax(0,1fr)}
+.review-comparison{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px}
+.comparison-side{display:grid;align-content:start;gap:5px;min-width:0}
+.comparison-side h4{margin:0;font-size:13px}
+.comparison-side pre{max-height:32rem;overflow:auto}
+@media(max-width:1000px){.maintenance-layout{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:740px){.review-comparison{grid-template-columns:minmax(0,1fr)}}
 .checklist{display:flex;flex-wrap:wrap;gap:4px 13px}
 .subheading{margin:4px 0 8px}
 .action-error{min-height:1.5em;color:var(--red);font-size:13px}

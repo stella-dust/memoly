@@ -1,6 +1,6 @@
 {
   "name": "memoly-local",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Local Vault maintenance and portable, confirmed memory for desktop agents",
   "license": "Apache-2.0",
   "type": "module",
@@ -18,7 +18,11 @@
     "docs",
     "README.md",
     "LICENSE",
-    "NOTICE"
+    "NOTICE",
+    "CONTRIBUTING.md",
+    "SECURITY.md",
+    "site",
+    "CHANGELOG.md"
   ],
   "scripts": {
     "test": "node --test",

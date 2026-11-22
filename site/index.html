@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="description" content="把本地 Markdown 知识库接给 WorkBuddy、Codex 等助手。答案可追溯到原文，整理与记忆由你确认。">
+  <title>Memoly · 给你的 Agent 一本有出处的知识库</title>
+  <link rel="stylesheet" href="site.css">
+  <script defer src="site.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">跳至主要内容</a>
+  <header class="site-header" id="top">
+    <div class="site-bar">
+      <a class="brand" href="#top" aria-label="Memoly 首页"><span class="logo" aria-hidden="true">M</span>Memoly</a>
+      <nav aria-label="页面导航">
+        <a href="#demo">交互演示</a>
+        <a href="#use">使用场景</a>
+        <a href="#install">安装</a>
+      </nav>
+      <a class="button small quiet github-button" href="https://github.com/stella-dust/memoly">GitHub <span aria-hidden="true">↗</span></a>
+    </div>
+  </header>
+
+  <main id="main">
+    <div class="surface">
+      <section class="hero wrap" aria-labelledby="headline">
+        <div class="hero-copy">
+          <p class="project-status"><span aria-hidden="true"></span>Apache-2.0 开源项目</p>
+          <h1 id="headline">把你的知识库，<br><span>接给常用的 Agent</span></h1>
+          <p>在本机打开 Obsidian 或 Markdown 目录，按章节授权 WorkBuddy、Codex 查资料。整理建议和共享记忆由你确认后生效。</p>
+          <div class="hero-actions">
+            <a class="button primary" href="https://github.com/stella-dust/memoly/releases/latest">下载本机版 <span aria-hidden="true">↗</span></a>
+            <a class="button quiet" href="#install">查看安装步骤</a>
+          </div>
+          <p class="hero-requirement">Node.js 22.13+ · npm · 本机 Web UI</p>
+        </div>
+
+        <section class="demo-window" id="demo" aria-labelledby="demo-title">
+          <header class="demo-bar">
+            <span class="window-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+            <h2 id="demo-title">Memoly 工具回执</h2>
+            <span class="demo-label">合成示例</span>
+          </header>
+          <div class="demo-content">
+            <div class="tablist js-only" role="tablist" aria-label="演示场景" data-tabs>
+              <button type="button" role="tab" id="evidence-tab" aria-selected="true" aria-controls="evidence-panel">原文取证</button>
+              <button type="button" role="tab" id="memory-tab" aria-selected="false" aria-controls="memory-panel" tabindex="-1">跨 Agent 记忆</button>
+            </div>
+            <div class="demo-panel" role="tabpanel" id="evidence-panel" aria-labelledby="evidence-tab">
+              <p class="prompt">WorkBuddy <span aria-hidden="true">→</span> 这次合成交接演练的编号和例外是什么？</p>
+              <div class="evidence" aria-label="原文证据">
+                <div class="evidence-caption"><code>inbox/shift-handoff.md</code><span>Lockout review</span></div>
+                <div class="source-line" data-source-line="6"><span aria-label="第 6 行">06</span><mark data-active="false">If the reviewer is unavailable, hold the simulation ticket until the next shift.</mark></div>
+                <div class="source-line" data-source-line="7"><span aria-label="第 7 行">07</span><mark data-active="true">The serial number for this synthetic drill is MEMOLY-DEMO-314.</mark></div>
+              </div>
+              <div class="evidence-footer">
+                <div class="evidence-controls js-only" role="group" aria-label="定位到来源行">
+                  <button type="button" data-cite="7" aria-pressed="true">编号 · L7</button>
+                  <button type="button" data-cite="6" aria-pressed="false">例外 · L6</button>
+                </div>
+                <div class="demo-result" id="citation-result" role="status">编号为 <strong>MEMOLY-DEMO-314</strong>。</div>
+              </div>
+            </div>
+            <div class="demo-panel" role="tabpanel" id="memory-panel" aria-labelledby="memory-tab" hidden>
+              <p class="prompt">WorkBuddy 提交建议 <span aria-hidden="true">→</span> Codex 查询已生效版本</p>
+              <div class="memory-states" role="group" aria-label="切换记忆状态">
+                <button type="button" data-memory="pending" aria-pressed="true">待确认</button>
+                <button type="button" data-memory="v1" aria-pressed="false">确认 v1</button>
+                <button type="button" data-memory="edit" aria-pressed="false">更正待审</button>
+                <button type="button" data-memory="v2" aria-pressed="false">确认 v2</button>
+                <button type="button" data-memory="revoked" aria-pressed="false">撤回</button>
+              </div>
+              <div class="tool-result" role="status" aria-atomic="true">
+                <code id="memory-code">not_found_or_unavailable</code>
+                <p id="memory-result">候选已提交，Codex 暂时读不到任何正文。</p>
+              </div>
+            </div>
+          </div>
+        </section>
+      </section>
+    </div>
+
+    <section id="use" class="wrap use" aria-labelledby="use-heading">
+      <header class="section-heading">
+        <h2 id="use-heading">同一套本机工具，两种用法</h2>
+        <p>连接器各自使用独立身份，访问你选定的资料版本和记忆。</p>
+      </header>
+      <article class="use-row">
+        <h3>自己的知识库</h3>
+        <p>关联已有 Vault，让常用 Agent 回答时给出文件、章节、行号和版本。保留可以跨助手复用的偏好，随时更正或撤回。</p>
+        <span>Obsidian · Markdown</span>
+      </article>
+      <article class="use-row">
+        <h3>小团队的资料库</h3>
+        <p>由一位管理员在本机维护团队的项目手册、交接和复盘。按用途给 Agent 建连接器，集中复核整理提案与引用。</p>
+        <span>单机 · 单一所有者</span>
+      </article>
+      <details class="boundary">
+        <summary>运行位置与权限边界</summary>
+        <p>Memoly 在本机保存状态，Web 工作台默认监听 <code>127.0.0.1</code>，MCP 以 stdio 接入本机客户端。当前面向单一所有者，成员账号、远程工作台和企业 SSO 尚未交付。获准返回的片段交给所选 Agent 处理；若它使用云模型，片段可能进入其服务。撤回影响 Memoly 的后续返回，已送达的副本遵循宿主的数据规则。</p>
+      </details>
+    </section>
+
+    <section id="install" class="install">
+      <div class="wrap install-inner">
+        <header class="section-heading">
+          <h2>先跑通一个样例 Vault</h2>
+          <p>这些命令从源码启动，在临时目录复制样例及保存状态。成功后打开终端打印的本机地址。</p>
+          <a class="button primary" href="https://github.com/stella-dust/memoly#安装">查看安装包与接入说明 <span aria-hidden="true">↗</span></a>
+        </header>
+        <div class="terminal">
+          <div class="terminal-bar">
+            <span>macOS · Terminal</span>
+            <button class="copy-button js-only" type="button" data-copy="quick-start">复制命令</button>
+          </div>
+          <pre id="quick-start"><code>git clone https://github.com/stella-dust/memoly.git
+cd memoly
+npm ci
+
+MEMOLY_DEMO="$(mktemp -d)"
+cp -R examples/vault "$MEMOLY_DEMO/vault"
+node bin/memoly.js init --vault "$MEMOLY_DEMO/vault" \
+  --state "$MEMOLY_DEMO/state" --write-root notes
+node bin/memoly.js serve --state "$MEMOLY_DEMO/state"</code></pre>
+          <p class="copy-status js-only" role="status" id="copy-status"></p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="wrap footer">
+    <a class="brand" href="#top"><span class="logo" aria-hidden="true">M</span>Memoly</a>
+    <nav aria-label="项目资源">
+      <a href="https://github.com/stella-dust/memoly">源码</a>
+      <a href="https://github.com/stella-dust/memoly/releases">发行</a>
+      <a href="https://github.com/stella-dust/memoly/issues">反馈</a>
+      <a href="https://github.com/stella-dust/memoly/blob/main/LICENSE">Apache-2.0</a>
+    </nav>
+  </footer>
+</body>
+</html>

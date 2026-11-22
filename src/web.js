@@ -108,7 +108,7 @@ function performAction(api, input) {
       requireConfirmation(input);
       return api.share({ client_id, path, heading, revision });
     case 'unshare':
-      return api.unshare({ client_id, path });
+      return api.unshare({ client_id, path, heading });
     case 'create-job':
       requireConfirmation(input);
       return api.createJob({ source, heading, revision, target, client_id });
